@@ -4,14 +4,12 @@ import { fetchCoins, fetchMarket, loadSnapshot, pollDiag } from "./ansem.js";
 import { config } from "./config.js";
 import { fetchDexQuotes, fetchSolUsd } from "./dex.js";
 import { iconCacheStats, serveIcon } from "./icons.js";
-import { fetchLatestPumpCoins } from "./pumpfun.js";
 import { MarketState } from "./state.js";
 import { serveWeb } from "./static.js";
 
 const DELTA_INTERVAL_MS = 200;
 const PING_INTERVAL_MS = 15_000;
 const MARKET_EVERY = 8;
-const PUMP_INTERVAL_MS = 3_000;
 const DEX_INTERVAL_MS = 2_500;
 const DEX_NEWEST = 60;
 /** Rebuild trigger: frontend lives in web/, so watch paths must include the whole repo. */
@@ -128,24 +126,6 @@ async function main(): Promise<void> {
     console.log(`[server] feed at ws://${config.host}:${config.port}/ws/public`);
   });
 
-  const pump = async (): Promise<void> => {
-    try {
-      const coins = await fetchLatestPumpCoins();
-      if (coins.length > 0) {
-        state.applyCoins(coins, Date.now(), { source: "pump", prune: "source" });
-        if (pollDiag.lastVia === "snapshot" || pollDiag.lastVia === null) {
-          pollDiag.lastVia = "pump";
-        }
-        pollDiag.lastCount = state.stats.live;
-        pollDiag.lastOkAt = Date.now();
-      }
-    } catch (error) {
-      console.error("[server] pump poll failed:", error instanceof Error ? error.message : error);
-    } finally {
-      if (!stopped) setTimeout(() => void pump(), PUMP_INTERVAL_MS);
-    }
-  };
-
   const dex = async (): Promise<void> => {
     try {
       const sol = await fetchSolUsd();
@@ -168,7 +148,6 @@ async function main(): Promise<void> {
 
   seedFromSnapshot();
   void poll();
-  void pump();
   void dex();
 
   const shutdown = (): void => {
