@@ -5,16 +5,20 @@ import { IconLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import type { Token } from "./types";
 import { IconAtlas, chartUrl, logoUrl, type ChartProvider } from "./iconAtlas";
 import {
+  GRADUATE_MCAP_USD,
   PADDING,
   ageGridlines,
   capGridlines,
-  colorForToken,
+  fillColorForToken,
   formatAge,
+  formatLiveChange,
+  formatUsd,
   formatUsdMoney,
+  haloColorForToken,
+  liveChange,
   radiusForCap,
   ringColorForToken,
-  tierGlowColor,
-  tokenTier,
+  showsGraduation,
   xForAge,
   yForCap,
   type MapConfig,
@@ -148,8 +152,6 @@ export function MarketMap({
 
   const labelled = declutter(placed, position);
   const positionTrigger = [now, view.width, view.height, config];
-  const prestige = visible.filter((t) => tokenTier(t) !== "free");
-  const diamonds = prestige.filter((t) => tokenTier(t) === "diamond");
 
   const selected =
     (selectedId && visible.find((t) => t.poolId === selectedId)) ||
@@ -177,25 +179,11 @@ export function MarketMap({
 
   const layers = [
     new ScatterplotLayer<Token>({
-      id: "tier-glow",
-      data: prestige,
-      getPosition: position,
-      getRadius: (t) => radiusOf(t) * (tokenTier(t) === "diamond" ? 2.45 : 2.2),
-      getFillColor: (t) => tierGlowColor(t) ?? [0, 0, 0, 0],
-      radiusUnits: "pixels",
-      pickable: false,
-      updateTriggers: { getPosition: positionTrigger, getRadius: positionTrigger },
-    }),
-
-    new ScatterplotLayer<Token>({
       id: "halo",
       data: visible,
       getPosition: position,
       getRadius: (t) => radiusOf(t) * 1.85,
-      getFillColor: (t) => {
-        const [r, g, b] = colorForToken(t);
-        return [r, g, b, tokenTier(t) === "free" ? 30 : 18];
-      },
+      getFillColor: haloColorForToken,
       radiusUnits: "pixels",
       updateTriggers: { getPosition: positionTrigger, getRadius: positionTrigger },
     }),
@@ -205,9 +193,9 @@ export function MarketMap({
       data: dots,
       getPosition: position,
       getRadius: (t) => Math.max(3.5, radiusOf(t) * 0.85),
-      getFillColor: colorForToken,
+      getFillColor: fillColorForToken,
       getLineColor: (t) => ringColorForToken(t),
-      getLineWidth: (t) => (tokenTier(t) === "free" ? 1 : 1.8),
+      getLineWidth: 1.2,
       lineWidthUnits: "pixels",
       stroked: true,
       radiusUnits: "pixels",
@@ -225,13 +213,7 @@ export function MarketMap({
       getPosition: (p) => position(p.token),
       getRadius: (p) => p.radius,
       getLineColor: (p) => ringColorForToken(p.token),
-      getLineWidth: (p) => {
-        const tier = tokenTier(p.token);
-        const base = Math.max(1.5, p.radius * 0.16);
-        if (tier === "diamond") return base + 1.6;
-        if (tier === "gold") return base + 1.1;
-        return base;
-      },
+      getLineWidth: (p) => Math.max(1.5, p.radius * 0.16),
       lineWidthUnits: "pixels",
       stroked: true,
       filled: true,
@@ -243,21 +225,6 @@ export function MarketMap({
         return true;
       },
       updateTriggers: { getPosition: positionTrigger, getRadius: [config], getLineWidth: [config] },
-    }),
-
-    new ScatterplotLayer<Token>({
-      id: "diamond-outer",
-      data: diamonds,
-      getPosition: position,
-      getRadius: (t) => radiusOf(t) + 4.5,
-      getLineColor: [240, 250, 255, 200],
-      getLineWidth: 1.2,
-      lineWidthUnits: "pixels",
-      stroked: true,
-      filled: false,
-      radiusUnits: "pixels",
-      pickable: false,
-      updateTriggers: { getPosition: positionTrigger, getRadius: positionTrigger },
     }),
 
     ...(atlasTexture
@@ -364,19 +331,12 @@ export function MarketMap({
         >
           <div className="map-tooltip-head">
             <strong>{hover.token.symbol}</strong>
-            {tokenTier(hover.token) !== "free" && (
-              <span className={`tier-pill ${tokenTier(hover.token)}`}>
-                {tokenTier(hover.token)}
-              </span>
-            )}
+            {hover.token.status === "migrated" && <span className="tier-pill migrated">grad</span>}
           </div>
           <span className="map-tooltip-name">{hover.token.name}</span>
           <div className="map-tooltip-row">
             {formatUsdMoney(hover.token.marketCapUsd)}
-            <span className={displayChange(hover.token) >= 0 ? "up" : "down"}>
-              {displayChange(hover.token) >= 0 ? "+" : ""}
-              {(displayChange(hover.token) * 100).toFixed(1)}%
-            </span>
+            <span className={changeTone(hover.token)}>{formatLiveChange(hover.token)}</span>
           </div>
           <div className="map-tooltip-meta">
             {hover.token.status === "migrated" ? "migrated" : `${hover.token.curvePct}% curve`}
@@ -390,8 +350,10 @@ export function MarketMap({
   );
 }
 
-function displayChange(token: Token): number {
-  return token.change5m !== 0 ? token.change5m : token.change24h;
+function changeTone(token: Token): string {
+  const change = liveChange(token);
+  if (change === null) return "";
+  return change >= 0 ? "up" : "down";
 }
 
 function pickedToken(object: unknown): Token | null {
@@ -433,6 +395,8 @@ function declutter(items: Placed[], position: (token: Token) => [number, number]
 function MapGrid({ view, config }: { view: Viewport; config: MapConfig }) {
   const caps = capGridlines(config);
   const ages = ageGridlines(config);
+  const grad = showsGraduation(config);
+  const gradY = yForCap(GRADUATE_MCAP_USD, view, config);
 
   return (
     <svg className="grid" width={view.width} height={view.height} aria-hidden="true">
@@ -447,6 +411,20 @@ function MapGrid({ view, config }: { view: Viewport; config: MapConfig }) {
           </g>
         );
       })}
+      {grad && (
+        <g>
+          <line
+            className="grad-line"
+            x1={PADDING.left}
+            x2={view.width - PADDING.right}
+            y1={gradY}
+            y2={gradY}
+          />
+          <text className="grad-label" x={PADDING.left - 10} y={gradY + 3} textAnchor="end">
+            grad
+          </text>
+        </g>
+      )}
       {ages.map((age) => {
         const x = xForAge(age, view, config);
         return (
@@ -463,12 +441,6 @@ function MapGrid({ view, config }: { view: Viewport; config: MapConfig }) {
       </text>
     </svg>
   );
-}
-
-function formatUsd(usd: number): string {
-  if (usd >= 1_000_000) return `${usd / 1_000_000}M`;
-  if (usd >= 1_000) return `${usd / 1_000}K`;
-  return String(usd);
 }
 
 function shortMint(mint: string): string {

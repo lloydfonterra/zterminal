@@ -168,6 +168,26 @@ body {
   font-weight: 600;
 }
 
+.open-more {
+  position: relative;
+}
+
+.open-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 6px;
+  background: #0c0e0c;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+}
+
 .metrics {
   display: flex;
   align-items: center;
@@ -446,7 +466,7 @@ body {
 }
 
 .movers-flag.migrated {
-  color: #8fd0ff;
+  color: var(--accent);
 }
 
 .movers-flag.gold {
@@ -536,6 +556,20 @@ body {
   letter-spacing: 0.1em;
 }
 
+.grid line.grad-line {
+  stroke: #b6f34d;
+  stroke-opacity: 0.45;
+  stroke-width: 1.25;
+}
+
+.grid text.grad-label {
+  fill: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .map-tooltip {
   position: absolute;
   z-index: 4;
@@ -575,16 +609,9 @@ body {
   border-radius: 999px;
 }
 
-.tier-pill.gold {
-  color: #1a1408;
-  background: #e8ba40;
-  box-shadow: 0 0 10px rgba(232, 186, 64, 0.45);
-}
-
-.tier-pill.diamond {
-  color: #0c1418;
-  background: #bae4ff;
-  box-shadow: 0 0 10px rgba(186, 228, 255, 0.45);
+.tier-pill.migrated {
+  color: #0c1408;
+  background: var(--accent);
 }
 
 .map-tooltip-name {
@@ -692,14 +719,9 @@ body {
   background: #6d7464;
 }
 
-.dot.gold {
-  background: transparent;
-  box-shadow: 0 0 0 1.5px #e8ba40, 0 0 8px rgba(232, 186, 64, 0.7);
-}
-
-.dot.diamond {
-  background: transparent;
-  box-shadow: 0 0 0 1.5px #bae4ff, 0 0 8px rgba(186, 228, 255, 0.7);
+.dot.graduated {
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(182, 243, 77, 0.45);
 }
 
 @media (max-width: 1100px) {

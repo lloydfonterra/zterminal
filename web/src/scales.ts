@@ -11,7 +11,10 @@ export interface MapConfig {
   maxCapUsd: number;
 }
 
+/** Pump.fun migration band — ~85 SOL on the curve, about $69K. */
+export const GRADUATE_MCAP_USD = 69_000;
 export const PADDING = { left: 72, right: 24, top: 28, bottom: 34 };
+const CHANGE_CLAMP = 9.99;
 
 export function xForAge(ageMs: number, view: Viewport, cfg: MapConfig): number {
   const span = Math.max(1, view.width - PADDING.left - PADDING.right);
@@ -37,53 +40,55 @@ export function radiusForCap(capUsd: number, txns: number, cfg: MapConfig): numb
   return scaled + activity;
 }
 
-export function colorForToken(token: Token): [number, number, number, number] {
-  const change = token.change5m !== 0 ? token.change5m : token.change24h;
-  const intensity = Math.min(1, Math.abs(change) / 0.5);
-  const alpha = token.txns24h === 0 ? 110 : Math.round(150 + Math.min(105, token.txns24h * 0.4));
-
-  if (Math.abs(change) < 0.01) return [128, 132, 148, alpha];
-  if (change > 0) {
-    return [Math.round(70 - 40 * intensity), Math.round(170 + 40 * intensity), 110, alpha];
-  }
-  return [Math.round(200 + 40 * intensity), Math.round(70 - 20 * intensity), 90, alpha];
+/** 5-minute print only. Null means no history yet — do not fall back to 24h. */
+export function liveChange(token: Token): number | null {
+  if (token.change5m === 0 || !Number.isFinite(token.change5m)) return null;
+  return Math.max(-CHANGE_CLAMP, Math.min(CHANGE_CLAMP, token.change5m));
 }
 
-export type TokenTier = "free" | "gold" | "diamond";
-
-export function tokenTier(token: Token): TokenTier {
-  const tier = token.tier.trim().toLowerCase();
-  if (tier === "gold" || tier === "diamond") return tier;
-  return "free";
+export function formatLiveChange(token: Token): string {
+  const change = liveChange(token);
+  if (change === null) return "—";
+  const pct = change * 100;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
 }
 
-const GOLD_RGB = [232, 186, 64] as const;
-const DIAMOND_RGB = [186, 228, 255] as const;
+/** Disc fill: curve vs migrated. */
+export function fillColorForToken(token: Token): [number, number, number, number] {
+  const alpha = token.txns24h === 0 ? 130 : Math.round(160 + Math.min(80, token.txns24h * 0.3));
+  if (token.status === "migrated") return [90, 210, 130, alpha];
+  return [110, 128, 118, alpha];
+}
 
-/** Stroke on the badge ring. Paid tiers keep their metal; free uses PnL colour. */
+/** Ring: recent PnL, or flat gray when there is no 5m print. */
 export function ringColorForToken(token: Token): [number, number, number, number] {
-  const tier = tokenTier(token);
-  if (tier === "gold") return [...GOLD_RGB, 255];
-  if (tier === "diamond") return [...DIAMOND_RGB, 255];
-  const [r, g, b] = colorForToken(token);
-  return [r, g, b, 255];
+  const change = liveChange(token);
+  if (change === null || Math.abs(change) < 0.01) return [128, 132, 148, 255];
+  const intensity = Math.min(1, Math.abs(change) / 0.5);
+  if (change > 0) {
+    return [Math.round(70 - 40 * intensity), Math.round(170 + 40 * intensity), 110, 255];
+  }
+  return [Math.round(200 + 40 * intensity), Math.round(70 - 20 * intensity), 90, 255];
 }
 
-export function tierGlowColor(token: Token): [number, number, number, number] | null {
-  const tier = tokenTier(token);
-  if (tier === "gold") return [...GOLD_RGB, 58];
-  if (tier === "diamond") return [...DIAMOND_RGB, 62];
-  return null;
+export function haloColorForToken(token: Token): [number, number, number, number] {
+  const [r, g, b] = fillColorForToken(token);
+  return [r, g, b, token.status === "migrated" ? 40 : 26];
 }
 
 const MCAP_AXIS_USD = [
-  1_000_000, 500_000, 200_000, 100_000, 50_000, 30_000, 10_000, 5_000, 2_000, 1_000,
+  5_000_000, 1_000_000, 500_000, 200_000, 100_000, 69_000, 50_000, 30_000, 10_000, 5_000, 2_000,
+  1_000, 250,
 ] as const;
 
 export function capGridlines(cfg: MapConfig): number[] {
   return MCAP_AXIS_USD.filter(
-    (usd) => usd >= cfg.minCapUsd * 0.99 && usd <= cfg.maxCapUsd * 1.01,
+    (usd) => usd !== GRADUATE_MCAP_USD && usd >= cfg.minCapUsd * 0.99 && usd <= cfg.maxCapUsd * 1.01,
   );
+}
+
+export function showsGraduation(cfg: MapConfig): boolean {
+  return GRADUATE_MCAP_USD >= cfg.minCapUsd * 0.99 && GRADUATE_MCAP_USD <= cfg.maxCapUsd * 1.01;
 }
 
 export function ageGridlines(cfg: MapConfig, count = 6): number[] {

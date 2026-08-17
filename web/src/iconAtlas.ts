@@ -215,24 +215,34 @@ export function logoUrl(mint: string): string {
 
 export const CHART_PROVIDERS = [
   { id: "pumpfun", label: "pump.fun" },
-  { id: "ansem", label: "ansem" },
-  { id: "gmgn", label: "gmgn" },
   { id: "axiom", label: "axiom" },
   { id: "photon", label: "photon" },
+  { id: "gmgn", label: "gmgn" },
+  { id: "dexscreener", label: "dexscreener" },
+  { id: "maestro", label: "maestro" },
+  { id: "trojan", label: "trojan" },
+  { id: "ansem", label: "ansem" },
   { id: "bullx", label: "bullx" },
   { id: "padre", label: "padre" },
   { id: "mevx", label: "mevx" },
   { id: "based", label: "based" },
-  { id: "dexscreener", label: "dexscreener" },
   { id: "birdeye", label: "birdeye" },
   { id: "jupiter", label: "jupiter" },
-  { id: "maestro", label: "maestro" },
-  { id: "trojan", label: "trojan" },
   { id: "bonkbot", label: "bonkbot" },
   { id: "bloom", label: "bloom" },
 ] as const;
 
 export type ChartProvider = (typeof CHART_PROVIDERS)[number]["id"];
+
+export const PRIMARY_CHART_IDS: readonly ChartProvider[] = [
+  "pumpfun",
+  "axiom",
+  "photon",
+  "gmgn",
+  "dexscreener",
+  "maestro",
+  "trojan",
+];
 
 export function chartLabel(provider: ChartProvider): string {
   return CHART_PROVIDERS.find((p) => p.id === provider)?.label ?? provider;

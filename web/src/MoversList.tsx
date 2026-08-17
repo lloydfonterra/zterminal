@@ -1,6 +1,6 @@
 import type { Token } from "./types";
 import { logoUrl } from "./iconAtlas";
-import { formatUsdMoney, tokenTier } from "./scales";
+import { formatLiveChange, formatUsdMoney, liveChange } from "./scales";
 
 export type MoversSort = "climbers" | "volume";
 
@@ -18,7 +18,7 @@ export function MoversList({ tokens, selectedId, sort, onSort, onSelect }: Props
   const ranked = [...tokens]
     .sort((a, b) =>
       sort === "climbers"
-        ? changeOf(b) - changeOf(a)
+        ? (liveChange(b) ?? Number.NEGATIVE_INFINITY) - (liveChange(a) ?? Number.NEGATIVE_INFINITY)
         : b.volumeUsd24h - a.volumeUsd24h,
     )
     .slice(0, LIMIT);
@@ -48,9 +48,8 @@ export function MoversList({ tokens, selectedId, sort, onSort, onSelect }: Props
       <ul className="movers-list">
         {ranked.length === 0 && <li className="movers-empty">no tokens in window</li>}
         {ranked.map((token, i) => {
-          const change = changeOf(token);
-          const up = change >= 0;
-          const tier = tokenTier(token);
+          const change = liveChange(token);
+          const tone = change === null ? "" : change >= 0 ? "up" : "down";
           return (
             <li key={token.poolId}>
               <button
@@ -69,16 +68,12 @@ export function MoversList({ tokens, selectedId, sort, onSort, onSelect }: Props
                 />
                 <span className="movers-id">
                   <span className="movers-sym">{token.symbol.slice(0, 10)}</span>
-                  <span className={`movers-flag ${token.status} ${tier}`}>
-                    {tier !== "free" ? `${tier} · ` : ""}
+                  <span className={`movers-flag ${token.status}`}>
                     {token.status === "migrated" ? "migrated" : `${token.curvePct}%`}
                   </span>
                 </span>
                 <span className="movers-mcap">{formatUsdMoney(token.marketCapUsd)}</span>
-                <span className={`movers-chg ${up ? "up" : "down"}`}>
-                  {up ? "+" : ""}
-                  {(change * 100).toFixed(1)}%
-                </span>
+                <span className={`movers-chg ${tone}`}>{formatLiveChange(token)}</span>
               </button>
             </li>
           );
@@ -86,8 +81,4 @@ export function MoversList({ tokens, selectedId, sort, onSort, onSelect }: Props
       </ul>
     </aside>
   );
-}
-
-function changeOf(token: Token): number {
-  return token.change5m !== 0 ? token.change5m : token.change24h;
 }

@@ -13,8 +13,8 @@ const DEX_INTERVAL_MS = 2_500;
 const DEX_NEWEST = 80;
 const FAST_INTERVAL_MS = 2_500;
 const DEEP_EVERY = 8;
-const KEEP_MS = 6 * 60 * 60 * 1000;
-const MAX_COINS = 800;
+const KEEP_MS = 24 * 60 * 60 * 1000;
+const MAX_COINS = 1500;
 /** Rebuild trigger: frontend lives in web/, so watch paths must include the whole repo. */
 
 async function main(): Promise<void> {

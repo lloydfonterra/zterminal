@@ -2,20 +2,20 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { MarketMap } from "./MarketMap";
 import { MoversList, type MoversSort } from "./MoversList";
 import { useFeed } from "./useFeed";
-import { CHART_PROVIDERS, chartLabel, type ChartProvider } from "./iconAtlas";
-import { tokenTier, type MapConfig } from "./scales";
+import { CHART_PROVIDERS, PRIMARY_CHART_IDS, chartLabel, type ChartProvider } from "./iconAtlas";
+import { GRADUATE_MCAP_USD, type MapConfig } from "./scales";
 import type { Token } from "./types";
 
 const WINDOWS: Array<{ label: string; seconds: number }> = [
-  { label: "15m", seconds: 900 },
-  { label: "1h", seconds: 3600 },
+  { label: "30m", seconds: 1_800 },
   { label: "3h", seconds: 10_800 },
-  { label: "6h", seconds: 21_600 },
+  { label: "24h", seconds: 86_400 },
 ];
 
 const CAP_RANGES: Array<{ label: string; minUsd: number; maxUsd: number }> = [
+  { label: "all", minUsd: 250, maxUsd: 5_000_000 },
   { label: "1K–50K", minUsd: 1_000, maxUsd: 50_000 },
-  { label: "1K–500K", minUsd: 1_000, maxUsd: 500_000 },
+  { label: "1K–200K", minUsd: 1_000, maxUsd: 200_000 },
   { label: "2K–1M", minUsd: 2_000, maxUsd: 1_000_000 },
 ];
 
@@ -28,10 +28,11 @@ const STATUSES: Array<{ label: string; value: "all" | "on_curve" | "migrated" }>
 
 export default function App() {
   const { tokens, solPriceUsd, status, setWatchMints } = useFeed();
-  const [windowIndex, setWindowIndex] = useState(2);
-  const [capIndex, setCapIndex] = useState(1);
+  const [windowIndex, setWindowIndex] = useState(1);
+  const [capIndex, setCapIndex] = useState(2);
   const [statusFilter, setStatusFilter] = useState<(typeof STATUSES)[number]["value"]>("all");
   const [chart, setChart] = useState<ChartProvider>("pumpfun");
+  const [moreOpen, setMoreOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -49,8 +50,8 @@ export default function App() {
   }, []);
 
   const config: MapConfig = useMemo(() => {
-    const win = WINDOWS[windowIndex] ?? WINDOWS[2]!;
-    const cap = CAP_RANGES[capIndex] ?? CAP_RANGES[1]!;
+    const win = WINDOWS[windowIndex] ?? WINDOWS[1]!;
+    const cap = CAP_RANGES[capIndex] ?? CAP_RANGES[2]!;
     return {
       windowSeconds: win.seconds,
       minCapUsd: cap.minUsd,
@@ -75,10 +76,11 @@ export default function App() {
     setWatchMints(mints);
   }, [inWindow, selectedId, focusId, setWatchMints]);
 
-  const climbing = inWindow.filter((t) => (t.change5m || t.change24h) > 0.05).length;
-  const migrated = inWindow.filter((t) => t.status === "migrated").length;
-  const goldCount = inWindow.filter((t) => tokenTier(t) === "gold").length;
-  const diamondCount = inWindow.filter((t) => tokenTier(t) === "diamond").length;
+  const graduated = inWindow.filter((t) => t.status === "migrated").length;
+  const aboveGrad = inWindow.filter((t) => t.marketCapUsd >= GRADUATE_MCAP_USD).length;
+  const primaryCharts = CHART_PROVIDERS.filter((c) => PRIMARY_CHART_IDS.includes(c.id));
+  const extraCharts = CHART_PROVIDERS.filter((c) => !PRIMARY_CHART_IDS.includes(c.id));
+  const extraActive = extraCharts.some((c) => c.id === chart);
 
   const searchHits = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -139,10 +141,8 @@ export default function App() {
 
           <div className="metrics">
             <Metric label="coins" value={String(inWindow.length)} />
-            <Metric label="climbing" value={String(climbing)} tone="up" />
-            <Metric label="migrated" value={String(migrated)} />
-            {goldCount > 0 && <Metric label="gold" value={String(goldCount)} />}
-            {diamondCount > 0 && <Metric label="diamond" value={String(diamondCount)} />}
+            <Metric label="graduated" value={String(graduated)} />
+            <Metric label="above grad" value={String(aboveGrad)} tone="up" />
             <Metric
               label="SOL"
               value={
@@ -192,17 +192,49 @@ export default function App() {
               </button>
             ))}
           </Segment>
-          <Segment label="open in" wrap>
-            {CHART_PROVIDERS.map((c) => (
-              <button
-                key={c.id}
-                className={c.id === chart ? "chip active" : "chip"}
-                onClick={() => setChart(c.id)}
-              >
-                {c.label}
-              </button>
-            ))}
-          </Segment>
+          <div className="group group-openin">
+            <span className="group-label">open in</span>
+            <div className="seg">
+              {primaryCharts.map((c) => (
+                <button
+                  key={c.id}
+                  className={c.id === chart ? "chip active" : "chip"}
+                  onClick={() => {
+                    setChart(c.id);
+                    setMoreOpen(false);
+                  }}
+                >
+                  {c.label}
+                </button>
+              ))}
+              <div className="open-more">
+                <button
+                  type="button"
+                  className={moreOpen || extraActive ? "chip active" : "chip"}
+                  onClick={() => setMoreOpen((open) => !open)}
+                >
+                  {extraActive ? chartLabel(chart) : "more"}
+                </button>
+                {moreOpen && (
+                  <div className="open-more-menu">
+                    {extraCharts.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className={c.id === chart ? "chip active" : "chip"}
+                        onClick={() => {
+                          setChart(c.id);
+                          setMoreOpen(false);
+                        }}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -239,10 +271,7 @@ export default function App() {
           <i className="dot flat" /> flat
         </span>
         <span>
-          <i className="dot gold" /> gold
-        </span>
-        <span>
-          <i className="dot diamond" /> diamond
+          <i className="dot graduated" /> graduated
         </span>
         <span className="hint">
           Hover a bubble · click opens {chartLabel(chart)} · search or movers to jump
