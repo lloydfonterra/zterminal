@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
-import { fetchCoins, fetchMarket, pollDiag } from "./ansem.js";
+import { fetchCoins, fetchMarket, loadSnapshot, pollDiag } from "./ansem.js";
 import { config } from "./config.js";
 import { iconCacheStats, serveIcon } from "./icons.js";
 import { MarketState } from "./state.js";
@@ -17,6 +17,20 @@ async function main(): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
 
+  const seedFromSnapshot = (): void => {
+    const snap = loadSnapshot();
+    if (snap.quote) {
+      state.solPriceUsd = snap.quote.solUsd;
+      state.ansemPriceUsd = snap.quote.priceUsd;
+    }
+    if (snap.coins.length === 0) return;
+    state.applyCoins(snap.coins, Date.now());
+    pollDiag.lastVia = "snapshot";
+    pollDiag.lastCount = snap.coins.length;
+    pollDiag.lastOkAt = Date.now();
+    console.log(`[server] seeded ${snap.coins.length} coins from snapshot`);
+  };
+
   const poll = async (): Promise<void> => {
     try {
       const now = Date.now();
@@ -28,6 +42,7 @@ async function main(): Promise<void> {
         }
       }
       const coins = await fetchCoins();
+      if (coins.length === 0) throw new Error("empty coin list");
       state.applyCoins(coins, now);
       pollCount += 1;
       pollDiag.lastError = null;
@@ -107,6 +122,7 @@ async function main(): Promise<void> {
     console.log(`[server] feed at ws://${config.host}:${config.port}/ws/public`);
   });
 
+  seedFromSnapshot();
   await poll();
 
   const shutdown = (): void => {

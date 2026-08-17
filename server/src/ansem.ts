@@ -1,7 +1,12 @@
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { Impit } from "impit";
 import { config } from "./config.js";
+
+const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), "../data");
 
 const execFileAsync = promisify(execFile);
 
@@ -138,4 +143,22 @@ export async function fetchMarket(): Promise<MarketQuote | null> {
   } catch {
     return null;
   }
+}
+
+function readJsonFile<T>(name: string): T | null {
+  try {
+    return JSON.parse(readFileSync(resolve(dataDir, name), "utf8")) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** Last known-good board, used when Cloudflare blocks Railway. */
+export function loadSnapshot(): { coins: AnsemCoin[]; quote: MarketQuote | null } {
+  const coinsBody = readJsonFile<CoinsResponse>("coins-snapshot.json");
+  const marketBody = readJsonFile<MarketResponse>("market-snapshot.json");
+  return {
+    coins: Array.isArray(coinsBody?.coins) ? coinsBody.coins : [],
+    quote: marketBody?.quote ?? null,
+  };
 }
