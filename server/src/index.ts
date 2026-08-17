@@ -9,6 +9,7 @@ import { serveWeb } from "./static.js";
 const DELTA_INTERVAL_MS = 200;
 const PING_INTERVAL_MS = 15_000;
 const MARKET_EVERY = 8;
+/** Rebuild trigger: frontend lives in web/, so watch paths must include the whole repo. */
 
 async function main(): Promise<void> {
   const state = new MarketState();
