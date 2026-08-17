@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "dotenv": "^16.4.7",
+    "impit": "^0.14.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {

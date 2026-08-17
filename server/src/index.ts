@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
-import { fetchCoins, fetchMarket } from "./ansem.js";
+import { fetchCoins, fetchMarket, pollDiag } from "./ansem.js";
 import { config } from "./config.js";
 import { iconCacheStats, serveIcon } from "./icons.js";
 import { MarketState } from "./state.js";
@@ -29,11 +29,16 @@ async function main(): Promise<void> {
       const coins = await fetchCoins();
       state.applyCoins(coins, now);
       pollCount += 1;
+      pollDiag.lastError = null;
+      pollDiag.lastOkAt = now;
+      pollDiag.lastCount = coins.length;
       if (pollCount === 1) {
-        console.log(`[server] loaded ${coins.length} ansem.io coins`);
+        console.log(`[server] loaded ${coins.length} ansem.io coins via ${pollDiag.lastVia}`);
       }
     } catch (error) {
-      console.error("[server] poll failed:", error instanceof Error ? error.message : error);
+      const message = error instanceof Error ? error.message : String(error);
+      pollDiag.lastError = message;
+      console.error("[server] poll failed:", message);
     } finally {
       if (!stopped) {
         timer = setTimeout(() => void poll(), config.pollIntervalMs);
@@ -53,6 +58,7 @@ async function main(): Promise<void> {
           solPriceUsd: state.solPriceUsd,
           ansemPriceUsd: state.ansemPriceUsd,
           icons: iconCacheStats(),
+          poll: pollDiag,
         }),
       );
       return;
