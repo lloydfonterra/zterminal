@@ -70,7 +70,12 @@ body {
 }
 
 .bar-filters {
-  height: 40px;
+  height: auto;
+  min-height: 40px;
+  flex-wrap: wrap;
+  row-gap: 6px;
+  padding-top: 6px;
+  padding-bottom: 6px;
   border-top: 1px solid var(--stroke);
   background: #0a0c0a;
 }
@@ -123,6 +128,10 @@ body {
   color: var(--text-dim);
 }
 
+.group-open {
+  flex: 1 1 100%;
+}
+
 .seg {
   display: inline-flex;
   padding: 2px;
@@ -130,6 +139,10 @@ body {
   background: #070908;
   border: 1px solid var(--stroke);
   border-radius: 7px;
+}
+
+.seg.wrap {
+  flex-wrap: wrap;
 }
 
 .chip {

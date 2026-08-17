@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { MarketMap } from "./MarketMap";
 import { MoversList, type MoversSort } from "./MoversList";
 import { useFeed } from "./useFeed";
-import type { ChartProvider } from "./iconAtlas";
+import { CHART_PROVIDERS, chartLabel, type ChartProvider } from "./iconAtlas";
 import { tokenTier, type MapConfig } from "./scales";
 import type { Token } from "./types";
 
@@ -25,11 +25,6 @@ const STATUSES: Array<{ label: string; value: "all" | "on_curve" | "migrated" }>
   { label: "migrated", value: "migrated" },
 ];
 
-const CHARTS: Array<{ label: string; value: ChartProvider }> = [
-  { label: "ansem", value: "ansem" },
-  { label: "pump.fun", value: "pumpfun" },
-  { label: "gmgn", value: "gmgn" },
-];
 
 export default function App() {
   const { tokens, solPriceUsd, ansemPriceUsd, status, setWatchMints } = useFeed();
@@ -196,12 +191,12 @@ export default function App() {
               </button>
             ))}
           </Segment>
-          <Segment label="open in">
-            {CHARTS.map((c) => (
+          <Segment label="open in" wrap>
+            {CHART_PROVIDERS.map((c) => (
               <button
-                key={c.value}
-                className={c.value === chart ? "chip active" : "chip"}
-                onClick={() => setChart(c.value)}
+                key={c.id}
+                className={c.id === chart ? "chip active" : "chip"}
+                onClick={() => setChart(c.id)}
               >
                 {c.label}
               </button>
@@ -259,19 +254,21 @@ export default function App() {
   );
 }
 
-function Segment({ label, children }: { label: string; children: ReactNode }) {
+function Segment({
+  label,
+  children,
+  wrap = false,
+}: {
+  label: string;
+  children: ReactNode;
+  wrap?: boolean;
+}) {
   return (
-    <div className="group">
+    <div className={wrap ? "group group-open" : "group"}>
       <span className="group-label">{label}</span>
-      <div className="seg">{children}</div>
+      <div className={wrap ? "seg wrap" : "seg"}>{children}</div>
     </div>
   );
-}
-
-function chartLabel(chart: ChartProvider): string {
-  if (chart === "pumpfun") return "pump.fun";
-  if (chart === "gmgn") return "GMGN";
-  return "ansem.io";
 }
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: "up" }) {

@@ -213,10 +213,64 @@ export function logoUrl(mint: string): string {
   return `/icon/${encodeURIComponent(mint)}`;
 }
 
-export type ChartProvider = "ansem" | "pumpfun" | "gmgn";
+export const CHART_PROVIDERS = [
+  { id: "ansem", label: "ansem" },
+  { id: "pumpfun", label: "pump.fun" },
+  { id: "gmgn", label: "gmgn" },
+  { id: "axiom", label: "axiom" },
+  { id: "photon", label: "photon" },
+  { id: "bullx", label: "bullx" },
+  { id: "padre", label: "padre" },
+  { id: "mevx", label: "mevx" },
+  { id: "based", label: "based" },
+  { id: "dexscreener", label: "dexscreener" },
+  { id: "birdeye", label: "birdeye" },
+  { id: "jupiter", label: "jupiter" },
+  { id: "maestro", label: "maestro" },
+  { id: "trojan", label: "trojan" },
+  { id: "bonkbot", label: "bonkbot" },
+  { id: "bloom", label: "bloom" },
+] as const;
+
+export type ChartProvider = (typeof CHART_PROVIDERS)[number]["id"];
+
+export function chartLabel(provider: ChartProvider): string {
+  return CHART_PROVIDERS.find((p) => p.id === provider)?.label ?? provider;
+}
 
 export function chartUrl(provider: ChartProvider, mint: string): string {
-  if (provider === "pumpfun") return `https://pump.fun/coin/${mint}`;
-  if (provider === "gmgn") return `https://gmgn.ai/sol/token/${mint}`;
-  return `https://ansem.io/launch/coin/${mint}`;
+  switch (provider) {
+    case "pumpfun":
+      return `https://pump.fun/coin/${mint}`;
+    case "gmgn":
+      return `https://gmgn.ai/sol/token/${mint}`;
+    case "axiom":
+      return `https://axiom.trade/meme/${mint}`;
+    case "photon":
+      return `https://photon-sol.tinyastro.io/en/lp/${mint}`;
+    case "bullx":
+      return `https://neo.bullx.io/terminal?chainId=1399811149&address=${mint}`;
+    case "padre":
+      return `https://trade.padre.gg/trade/solana/${mint}`;
+    case "mevx":
+      return `https://mevx.io/solana/${mint}`;
+    case "based":
+      return `https://www.based.gg/sol/${mint}`;
+    case "dexscreener":
+      return `https://dexscreener.com/solana/${mint}`;
+    case "birdeye":
+      return `https://birdeye.so/token/${mint}?chain=solana`;
+    case "jupiter":
+      return `https://jup.ag/tokens/${mint}`;
+    case "maestro":
+      return `https://t.me/MaestroSniperBot?start=${mint}`;
+    case "trojan":
+      return `https://t.me/solana_trojanbot?start=${mint}`;
+    case "bonkbot":
+      return `https://t.me/bonkbot_bot?start=${mint}`;
+    case "bloom":
+      return `https://t.me/BloomSolana_bot?start=${mint}`;
+    default:
+      return `https://ansem.io/launch/coin/${mint}`;
+  }
 }
