@@ -37,9 +37,14 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [moversSort, setMoversSort] = useState<MoversSort>("climbers");
   const [clock, setClock] = useState(() => formatClock(new Date()));
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const timer = window.setInterval(() => setClock(formatClock(new Date())), 1000);
+    const timer = window.setInterval(() => {
+      const date = new Date();
+      setClock(formatClock(date));
+      setNow(date.getTime());
+    }, 1000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -54,14 +59,14 @@ export default function App() {
   }, [windowIndex, capIndex]);
 
   const inWindow = useMemo(() => {
-    const cutoff = Date.now() - config.windowSeconds * 1000;
+    const cutoff = now - config.windowSeconds * 1000;
     return tokens.filter((t) => {
       if (t.createdAt < cutoff) return false;
       if (t.marketCapUsd < config.minCapUsd || t.marketCapUsd > config.maxCapUsd) return false;
       if (statusFilter !== "all" && t.status !== statusFilter) return false;
       return true;
     });
-  }, [tokens, config, statusFilter]);
+  }, [tokens, config, statusFilter, now]);
 
   useEffect(() => {
     const mints = inWindow.map((t) => t.poolId);

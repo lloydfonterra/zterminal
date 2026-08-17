@@ -17,7 +17,7 @@ const LIVE_HOLD_MS = 20_000;
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 /** Pump.fun / PumpSwap supply — same 1e9 the ansem.io chart uses for USD mcap. */
 const PUMP_SUPPLY = 1_000_000_000;
-const MAX_SUBS = 80;
+const MAX_SUBS = 36;
 const KEEP_LIVE_MS = 30_000;
 
 interface LiveTradeMessage {
@@ -148,8 +148,10 @@ export function useFeed(publishIntervalMs = 32): Feed {
     let closed = false;
     const subscribed = new Set<string>();
 
-    const send = (payload: object): void => {
-      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
+    const send = (payload: object): boolean => {
+      if (socket?.readyState !== WebSocket.OPEN) return false;
+      socket.send(JSON.stringify(payload));
+      return true;
     };
 
     const pickWatch = (): string[] => {
@@ -160,8 +162,8 @@ export function useFeed(publishIntervalMs = 32): Feed {
         .filter((t): t is Token => t !== undefined)
         .sort(
           (a, b) =>
+            b.createdAt - a.createdAt ||
             b.volumeUsd24h - a.volumeUsd24h ||
-            b.txns24h - a.txns24h ||
             b.marketCapUsd - a.marketCapUsd,
         );
 
@@ -182,8 +184,7 @@ export function useFeed(publishIntervalMs = 32): Feed {
       const live = new Set(pickWatch());
       for (const mint of live) {
         if (subscribed.has(mint)) continue;
-        subscribed.add(mint);
-        send({ type: "subscribe", channel: "market", mint });
+        if (send({ type: "subscribe", channel: "market", mint })) subscribed.add(mint);
       }
       for (const mint of [...subscribed]) {
         if (live.has(mint)) continue;
@@ -200,6 +201,18 @@ export function useFeed(publishIntervalMs = 32): Feed {
       // close * solUsd * 1e9. When both prints exist they imply the same USD.
       if (usd > 0) return usd;
       if (quote > 0 && solUsd > 0) return quote * solUsd;
+      return null;
+    };
+
+    const priceFromCandle = (data: LiveTradeMessage["data"]): number | null => {
+      const candle = (data as { candle?: { close?: string; open?: string; closeUsd?: number } } | undefined)
+        ?.candle;
+      if (!candle) return null;
+      const usd = Number(candle.closeUsd);
+      if (usd > 0) return usd;
+      const close = Number(candle.close ?? candle.open);
+      const solUsd = solRef.current;
+      if (close > 0 && solUsd > 0) return close * solUsd;
       return null;
     };
 
@@ -249,11 +262,16 @@ export function useFeed(publishIntervalMs = 32): Feed {
         } catch {
           return;
         }
-        // Same filter as the ansem.io chart: only tape prints move the live candle.
-        if (msg.type !== "trade" || !msg.mint) return;
-        const priceUsd = priceFromTrade(msg.data);
+        if (!msg.mint) return;
+        const priceUsd =
+          msg.type === "trade"
+            ? priceFromTrade(msg.data)
+            : msg.type === "candle"
+              ? priceFromCandle(msg.data)
+              : null;
         if (priceUsd === null) return;
-        const at = Number(msg.data?.ts) || Number(msg.data?.blockTime) || Date.now();
+        const rawAt = Number(msg.data?.ts) || Number(msg.data?.blockTime) || Date.now();
+        const at = rawAt > 0 && rawAt < 1e12 ? rawAt * 1000 : rawAt;
         applyTrade(msg.mint, priceUsd, at);
       };
 

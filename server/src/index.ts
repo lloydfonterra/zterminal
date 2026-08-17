@@ -2,13 +2,18 @@ import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { fetchCoins, fetchMarket, loadSnapshot, pollDiag } from "./ansem.js";
 import { config } from "./config.js";
+import { fetchDexQuotes, fetchSolUsd } from "./dex.js";
 import { iconCacheStats, serveIcon } from "./icons.js";
+import { fetchLatestPumpCoins } from "./pumpfun.js";
 import { MarketState } from "./state.js";
 import { serveWeb } from "./static.js";
 
 const DELTA_INTERVAL_MS = 200;
 const PING_INTERVAL_MS = 15_000;
 const MARKET_EVERY = 8;
+const PUMP_INTERVAL_MS = 3_000;
+const DEX_INTERVAL_MS = 2_500;
+const DEX_NEWEST = 60;
 /** Rebuild trigger: frontend lives in web/, so watch paths must include the whole repo. */
 
 async function main(): Promise<void> {
@@ -16,6 +21,7 @@ async function main(): Promise<void> {
   let pollCount = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
+  let dexOffset = 0;
 
   const seedFromSnapshot = (): void => {
     const snap = loadSnapshot();
@@ -24,7 +30,7 @@ async function main(): Promise<void> {
       state.ansemPriceUsd = snap.quote.priceUsd;
     }
     if (snap.coins.length === 0) return;
-    state.applyCoins(snap.coins, Date.now());
+    state.applyCoins(snap.coins, Date.now(), { source: "ansem", prune: "source" });
     pollDiag.lastVia = "snapshot";
     pollDiag.lastCount = snap.coins.length;
     pollDiag.lastOkAt = Date.now();
@@ -43,7 +49,7 @@ async function main(): Promise<void> {
       }
       const coins = await fetchCoins();
       if (coins.length === 0) throw new Error("empty coin list");
-      state.applyCoins(coins, now);
+      state.applyCoins(coins, now, { source: "ansem", prune: "source" });
       pollCount += 1;
       pollDiag.lastError = null;
       pollDiag.lastOkAt = now;
@@ -122,8 +128,48 @@ async function main(): Promise<void> {
     console.log(`[server] feed at ws://${config.host}:${config.port}/ws/public`);
   });
 
+  const pump = async (): Promise<void> => {
+    try {
+      const coins = await fetchLatestPumpCoins();
+      if (coins.length > 0) {
+        state.applyCoins(coins, Date.now(), { source: "pump", prune: "source" });
+        if (pollDiag.lastVia === "snapshot" || pollDiag.lastVia === null) {
+          pollDiag.lastVia = "pump";
+        }
+        pollDiag.lastCount = state.stats.live;
+        pollDiag.lastOkAt = Date.now();
+      }
+    } catch (error) {
+      console.error("[server] pump poll failed:", error instanceof Error ? error.message : error);
+    } finally {
+      if (!stopped) setTimeout(() => void pump(), PUMP_INTERVAL_MS);
+    }
+  };
+
+  const dex = async (): Promise<void> => {
+    try {
+      const sol = await fetchSolUsd();
+      if (sol) state.solPriceUsd = sol;
+      const newest = state.newestMints(DEX_NEWEST);
+      const all = state.newestMints(2_000);
+      const rotate = all.slice(dexOffset, dexOffset + 20);
+      dexOffset = all.length === 0 ? 0 : (dexOffset + 20) % all.length;
+      const mints = [...new Set([...newest, ...rotate])];
+      if (mints.length > 0) {
+        const quotes = await fetchDexQuotes(mints);
+        state.applyQuotes(quotes, Date.now());
+      }
+    } catch (error) {
+      console.error("[server] dex poll failed:", error instanceof Error ? error.message : error);
+    } finally {
+      if (!stopped) setTimeout(() => void dex(), DEX_INTERVAL_MS);
+    }
+  };
+
   seedFromSnapshot();
-  await poll();
+  void poll();
+  void pump();
+  void dex();
 
   const shutdown = (): void => {
     console.log("\n[server] shutting down");

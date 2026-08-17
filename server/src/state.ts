@@ -28,8 +28,20 @@ interface PricePoint {
   p: number;
 }
 
+export type CoinSource = "ansem" | "pump";
+
+export interface PriceQuote {
+  mint: string;
+  priceUsd: number;
+  marketCapUsd: number;
+  change5mPct?: number | null;
+  change24hPct?: number | null;
+  volumeUsd24h?: number | null;
+}
+
 interface Pool {
   coin: AnsemCoin;
+  source: CoinSource;
   createdAt: number;
   lastTradeAt: number;
   history: PricePoint[];
@@ -46,7 +58,13 @@ export class MarketState {
   solPriceUsd = 0;
   ansemPriceUsd = 0;
 
-  applyCoins(coins: AnsemCoin[], now: number): void {
+  applyCoins(
+    coins: AnsemCoin[],
+    now: number,
+    opts: { source?: CoinSource; prune?: boolean | "source" } = {},
+  ): void {
+    const source = opts.source ?? "ansem";
+    const prune = opts.prune ?? "source";
     const seen = new Set<string>();
 
     for (const coin of coins) {
@@ -64,6 +82,7 @@ export class MarketState {
       if (!prev) {
         this.pools.set(coin.mint, {
           coin,
+          source,
           createdAt,
           lastTradeAt: createdAt,
           history: Number.isFinite(price) && price > 0 ? [{ t: now, p: price }] : [],
@@ -72,34 +91,83 @@ export class MarketState {
         continue;
       }
 
+      const next =
+        prev.source === "ansem" && source === "pump"
+          ? {
+              ...prev.coin,
+              priceUsd: coin.priceUsd,
+              marketCapUsd: coin.marketCapUsd,
+              status: coin.status,
+              curvePct: coin.curvePct,
+            }
+          : coin;
+
       const moved =
-        prev.coin.marketCapUsd !== coin.marketCapUsd ||
-        prev.coin.priceUsd !== coin.priceUsd ||
-        prev.coin.status !== coin.status ||
-        prev.coin.tier !== coin.tier ||
-        prev.coin.curvePct !== coin.curvePct ||
-        prev.coin.volume24hUsd !== coin.volume24hUsd ||
-        prev.coin.change24hPct !== coin.change24hPct;
+        prev.coin.marketCapUsd !== next.marketCapUsd ||
+        prev.coin.priceUsd !== next.priceUsd ||
+        prev.coin.status !== next.status ||
+        prev.coin.tier !== next.tier ||
+        prev.coin.curvePct !== next.curvePct ||
+        prev.coin.volume24hUsd !== next.volume24hUsd ||
+        prev.coin.change24hPct !== next.change24hPct;
 
       if (moved) {
-        if (prev.coin.marketCapUsd !== coin.marketCapUsd || prev.coin.priceUsd !== coin.priceUsd) {
+        if (prev.coin.marketCapUsd !== next.marketCapUsd || prev.coin.priceUsd !== next.priceUsd) {
           prev.lastTradeAt = now;
           if (Number.isFinite(price) && price > 0) prev.history.push({ t: now, p: price });
         }
-        prev.coin = coin;
+        prev.coin = next;
+        if (source === "ansem") prev.source = "ansem";
         this.dirty.add(coin.mint);
       }
     }
 
-    for (const mint of this.pools.keys()) {
-      if (seen.has(mint)) continue;
-      this.pools.delete(mint);
-      this.created.delete(mint);
-      this.dirty.delete(mint);
-      this.removed.add(mint);
+    if (prune) {
+      for (const [mint, pool] of this.pools) {
+        if (seen.has(mint)) continue;
+        if (prune === "source" && pool.source !== source) continue;
+        this.pools.delete(mint);
+        this.created.delete(mint);
+        this.dirty.delete(mint);
+        this.removed.add(mint);
+      }
     }
 
     this.trimHistory(now);
+  }
+
+  applyQuotes(quotes: PriceQuote[], now: number): void {
+    for (const quote of quotes) {
+      const pool = this.pools.get(quote.mint);
+      if (!pool) continue;
+      const price = Number(quote.priceUsd);
+      const cap = Number(quote.marketCapUsd);
+      if (!(price > 0) || !(cap > 0)) continue;
+
+      const moved = pool.coin.marketCapUsd !== cap || pool.coin.priceUsd !== price;
+      if (moved) {
+        pool.lastTradeAt = now;
+        pool.history.push({ t: now, p: price });
+      }
+      pool.coin = {
+        ...pool.coin,
+        priceUsd: price,
+        marketCapUsd: cap,
+        volume24hUsd: quote.volumeUsd24h ?? pool.coin.volume24hUsd,
+        change24hPct: quote.change24hPct ?? pool.coin.change24hPct,
+      };
+      if (moved || quote.change24hPct != null || quote.volumeUsd24h != null) {
+        this.dirty.add(quote.mint);
+      }
+    }
+    this.trimHistory(now);
+  }
+
+  newestMints(limit: number): string[] {
+    return [...this.pools.values()]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit)
+      .map((pool) => pool.coin.mint);
   }
 
   imageUrlFor(mint: string): string | null {
