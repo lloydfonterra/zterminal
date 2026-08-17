@@ -1,0 +1,7 @@
+node_modules
+web/dist
+brand
+.git
+*.mp4
+*.log
+.env

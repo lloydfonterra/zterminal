@@ -1,0 +1,222 @@
+import type { Device, Texture } from "@luma.gl/core";
+
+const CELL = 64;
+const COLUMNS = 32;
+const CAPACITY = COLUMNS * COLUMNS;
+const SIZE = CELL * COLUMNS;
+
+export interface IconMappingEntry {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  anchorX: number;
+  anchorY: number;
+  mask: boolean;
+}
+
+export class IconAtlas {
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  private scratch: HTMLCanvasElement;
+  private scratchCtx: CanvasRenderingContext2D;
+  private texture: Texture | null = null;
+
+  private slots = new Map<string, number>();
+  private nextIndex = 0;
+  private awaitingUpload = new Set<number>();
+  private failed = new Set<string>();
+  private inFlight = new Set<string>();
+
+  readonly mapping: Record<string, IconMappingEntry> = {};
+
+  constructor() {
+    this.canvas = document.createElement("canvas");
+    this.canvas.width = SIZE;
+    this.canvas.height = SIZE;
+    this.ctx = context2d(this.canvas);
+
+    this.scratch = document.createElement("canvas");
+    this.scratch.width = CELL;
+    this.scratch.height = CELL;
+    this.scratchCtx = context2d(this.scratch);
+  }
+
+  attach(device: Device): void {
+    if (this.texture) return;
+    this.texture = device.createTexture({
+      format: "rgba8unorm",
+      width: SIZE,
+      height: SIZE,
+      mipLevels: 1,
+      sampler: {
+        minFilter: "linear",
+        magFilter: "linear",
+        addressModeU: "clamp-to-edge",
+        addressModeV: "clamp-to-edge",
+      },
+    });
+
+    const pending = [...this.awaitingUpload];
+    this.awaitingUpload.clear();
+    for (const index of pending) void this.upload(index);
+  }
+
+  get atlas(): Texture | null {
+    return this.texture;
+  }
+
+  ensure(mint: string, symbol: string, imageUrl: string | null): string | null {
+    if (this.slots.has(mint)) return mint;
+    if (this.nextIndex >= CAPACITY) return null;
+
+    const index = this.nextIndex++;
+    this.slots.set(mint, index);
+    this.mapping[mint] = cellToMapping(index);
+
+    this.drawFallback(index, mint, symbol);
+    void this.upload(index);
+
+    if (imageUrl && !this.failed.has(mint) && !this.inFlight.has(mint)) {
+      this.inFlight.add(mint);
+      void this.loadRemote(index, mint, imageUrl);
+    }
+    return mint;
+  }
+
+  private async loadRemote(index: number, key: string, url: string): Promise<void> {
+    try {
+      const bitmap = await loadBitmap(url);
+      this.drawCircularImage(index, bitmap);
+      bitmap.close();
+      await this.upload(index);
+    } catch {
+      this.failed.add(key);
+    } finally {
+      this.inFlight.delete(key);
+    }
+  }
+
+  private async upload(index: number): Promise<void> {
+    if (!this.texture) {
+      this.awaitingUpload.add(index);
+      return;
+    }
+    const { x, y } = cellOrigin(index);
+
+    this.scratchCtx.clearRect(0, 0, CELL, CELL);
+    this.scratchCtx.drawImage(this.canvas, x, y, CELL, CELL, 0, 0, CELL, CELL);
+    const cell = await createImageBitmap(this.scratch);
+    try {
+      this.texture.copyExternalImage({ image: cell, x, y, width: CELL, height: CELL });
+    } finally {
+      cell.close();
+    }
+  }
+
+  private drawFallback(index: number, key: string, symbol: string): void {
+    const { x, y } = cellOrigin(index);
+    const ctx = this.ctx;
+    const hue = hashHue(key);
+    const initials = toInitials(symbol);
+
+    ctx.save();
+    ctx.clearRect(x, y, CELL, CELL);
+    circlePath(ctx, x, y);
+    ctx.fillStyle = `hsl(${hue} 44% 27%)`;
+    ctx.fill();
+
+    ctx.fillStyle = `hsl(${hue} 72% 84%)`;
+    ctx.font = `600 ${initials.length > 2 ? 20 : 26}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(initials, x + CELL / 2, y + CELL / 2 + 1);
+    ctx.restore();
+  }
+
+  private drawCircularImage(index: number, bitmap: ImageBitmap): void {
+    const { x, y } = cellOrigin(index);
+    const ctx = this.ctx;
+
+    ctx.save();
+    ctx.clearRect(x, y, CELL, CELL);
+    circlePath(ctx, x, y);
+    ctx.clip();
+
+    const scale = Math.max(CELL / bitmap.width, CELL / bitmap.height);
+    const w = bitmap.width * scale;
+    const h = bitmap.height * scale;
+    ctx.drawImage(bitmap, x + (CELL - w) / 2, y + (CELL - h) / 2, w, h);
+    ctx.restore();
+  }
+}
+
+function circlePath(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.beginPath();
+  ctx.arc(x + CELL / 2, y + CELL / 2, CELL / 2 - 1, 0, Math.PI * 2);
+  ctx.closePath();
+}
+
+function cellOrigin(index: number): { x: number; y: number } {
+  return { x: (index % COLUMNS) * CELL, y: Math.floor(index / COLUMNS) * CELL };
+}
+
+function cellToMapping(index: number): IconMappingEntry {
+  const { x, y } = cellOrigin(index);
+  return {
+    x,
+    y,
+    width: CELL,
+    height: CELL,
+    anchorX: CELL / 2,
+    anchorY: CELL / 2,
+    mask: false,
+  };
+}
+
+function context2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("2d canvas context unavailable");
+  return ctx;
+}
+
+async function loadBitmap(url: string): Promise<ImageBitmap> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`status ${res.status}`);
+  const type = res.headers.get("content-type") ?? "";
+  if (!type.startsWith("image/")) throw new Error(`not an image: ${type}`);
+  return createImageBitmap(await res.blob());
+}
+
+function hashHue(key: string): number {
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) % 360_000;
+  }
+  return hash % 360;
+}
+
+function toInitials(symbol: string): string {
+  const clean = symbol.replace(/[^\x20-\x7e]/g, "").trim();
+  if (clean.length === 0) return "?";
+  const words = clean.split(/[\s_\-]+/).filter(Boolean);
+  if (words.length > 1) {
+    return words
+      .slice(0, 3)
+      .map((word) => word[0]!.toUpperCase())
+      .join("");
+  }
+  return clean.slice(0, 3).toUpperCase();
+}
+
+export function logoUrl(mint: string): string {
+  return `/icon/${encodeURIComponent(mint)}`;
+}
+
+export type ChartProvider = "ansem" | "pumpfun" | "gmgn";
+
+export function chartUrl(provider: ChartProvider, mint: string): string {
+  if (provider === "pumpfun") return `https://pump.fun/coin/${mint}`;
+  if (provider === "gmgn") return `https://gmgn.ai/sol/token/${mint}`;
+  return `https://ansem.io/launch/coin/${mint}`;
+}
