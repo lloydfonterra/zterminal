@@ -9,8 +9,8 @@ import type { Token } from "./types";
 const WINDOWS: Array<{ label: string; seconds: number }> = [
   { label: "15m", seconds: 900 },
   { label: "1h", seconds: 3600 },
+  { label: "3h", seconds: 10_800 },
   { label: "6h", seconds: 21_600 },
-  { label: "24h", seconds: 86_400 },
 ];
 
 const CAP_RANGES: Array<{ label: string; minUsd: number; maxUsd: number }> = [
@@ -27,11 +27,11 @@ const STATUSES: Array<{ label: string; value: "all" | "on_curve" | "migrated" }>
 
 
 export default function App() {
-  const { tokens, solPriceUsd, ansemPriceUsd, status, setWatchMints } = useFeed();
+  const { tokens, solPriceUsd, status, setWatchMints } = useFeed();
   const [windowIndex, setWindowIndex] = useState(2);
   const [capIndex, setCapIndex] = useState(1);
   const [statusFilter, setStatusFilter] = useState<(typeof STATUSES)[number]["value"]>("all");
-  const [chart, setChart] = useState<ChartProvider>("ansem");
+  const [chart, setChart] = useState<ChartProvider>("pumpfun");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -106,7 +106,7 @@ export default function App() {
           <div className="brand" aria-label="zTerminal">
             <span className="brand-mark">z</span>
             <span className="brand-name">Terminal</span>
-            <span className="chain">ansem.io</span>
+            <span className="chain">pump.fun</span>
           </div>
 
           <div className="search">
@@ -150,10 +150,6 @@ export default function App() {
                   ? `$${solPriceUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
                   : "—"
               }
-            />
-            <Metric
-              label="$ANSEM"
-              value={ansemPriceUsd > 0 ? `$${ansemPriceUsd.toFixed(2)}` : "—"}
             />
             <span className={`status ${status}`}>
               <i className="status-dot" />

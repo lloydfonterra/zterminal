@@ -214,8 +214,8 @@ export function logoUrl(mint: string): string {
 }
 
 export const CHART_PROVIDERS = [
-  { id: "ansem", label: "ansem" },
   { id: "pumpfun", label: "pump.fun" },
+  { id: "ansem", label: "ansem" },
   { id: "gmgn", label: "gmgn" },
   { id: "axiom", label: "axiom" },
   { id: "photon", label: "photon" },

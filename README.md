@@ -1,11 +1,8 @@
 # zTerminal
 
-A live market map for **[ansem.io](https://ansem.io/)** launches on Solana. Every coin on the
-launchpad is drawn as a bubble: horizontal position is age, vertical position is market cap on a
-log scale. Click a bubble to open it on ansem.io (or pump.fun / GMGN).
-
-This is the same map idea as karta.markets / hoodmap. The feed is ansem.io's public coin list —
-real Pump.fun tokens, wrapped with tier, curve progress, and community-airdrop state.
+A live market map for **[pump.fun](https://pump.fun/)** launches on Solana — the same idea as
+karta.markets. Every new coin is a bubble: age on X, log market cap on Y. Click opens pump.fun
+(or axiom / photon / GMGN / bots).
 
 ```
 npm install
@@ -17,15 +14,14 @@ Then open <http://localhost:5173>. No API key is required.
 ## How it works
 
 ```
-ansem.io /api/coins  ──►  server  ──►  WebSocket  ──►  deck.gl bubble map
-ansem.io /api/market        │          snapshot           x = age
+pump.fun /coins     ──►  server  ──►  WebSocket  ──►  deck.gl bubble map
+DexScreener prices          │          snapshot           x = age
                             └─ /icon proxy                y = log(USD mcap)
                                + delta
 ```
 
-The site does not publish a market-wide live stream (its socket is per-mint trades). The server
-polls `/api/coins` every 2.5s, keeps a 5-minute price history so bubbles can colour by recent
-move, and pushes the same snapshot/delta protocol the original terminal used.
+The server pages pump.fun's public coin list (last ~6h), refreshes the newest page every 2.5s,
+and overlays DexScreener quotes so bubbles move.
 
 Click-out is the v1 trade path. There is no in-app buy/sell panel.
 

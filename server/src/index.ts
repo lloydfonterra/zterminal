@@ -1,17 +1,20 @@
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
-import { fetchCoins, fetchMarket, loadSnapshot, pollDiag } from "./ansem.js";
 import { config } from "./config.js";
 import { fetchDexQuotes, fetchSolUsd } from "./dex.js";
 import { iconCacheStats, serveIcon } from "./icons.js";
+import { fetchPumpPage, fetchRecentPumpCoins, pollDiag } from "./pumpfun.js";
 import { MarketState } from "./state.js";
 import { serveWeb } from "./static.js";
 
 const DELTA_INTERVAL_MS = 200;
 const PING_INTERVAL_MS = 15_000;
-const MARKET_EVERY = 8;
 const DEX_INTERVAL_MS = 2_500;
-const DEX_NEWEST = 60;
+const DEX_NEWEST = 80;
+const FAST_INTERVAL_MS = 2_500;
+const DEEP_EVERY = 8;
+const KEEP_MS = 6 * 60 * 60 * 1000;
+const MAX_COINS = 800;
 /** Rebuild trigger: frontend lives in web/, so watch paths must include the whole repo. */
 
 async function main(): Promise<void> {
@@ -21,39 +24,22 @@ async function main(): Promise<void> {
   let stopped = false;
   let dexOffset = 0;
 
-  const seedFromSnapshot = (): void => {
-    const snap = loadSnapshot();
-    if (snap.quote) {
-      state.solPriceUsd = snap.quote.solUsd;
-      state.ansemPriceUsd = snap.quote.priceUsd;
-    }
-    if (snap.coins.length === 0) return;
-    state.applyCoins(snap.coins, Date.now(), { source: "ansem", prune: "source" });
-    pollDiag.lastVia = "snapshot";
-    pollDiag.lastCount = snap.coins.length;
-    pollDiag.lastOkAt = Date.now();
-    console.log(`[server] seeded ${snap.coins.length} coins from snapshot`);
-  };
-
   const poll = async (): Promise<void> => {
     try {
       const now = Date.now();
-      if (pollCount % MARKET_EVERY === 0) {
-        const quote = await fetchMarket();
-        if (quote) {
-          state.solPriceUsd = quote.solUsd;
-          state.ansemPriceUsd = quote.priceUsd;
-        }
-      }
-      const coins = await fetchCoins();
-      if (coins.length === 0) throw new Error("empty coin list");
-      state.applyCoins(coins, now, { source: "ansem", prune: "source" });
+      const deep = pollCount % DEEP_EVERY === 0;
+      const coins = deep
+        ? await fetchRecentPumpCoins(KEEP_MS, MAX_COINS)
+        : await fetchPumpPage(0);
+      if (coins.length === 0) throw new Error("empty pump.fun list");
+      state.applyCoins(coins, now, { source: "pump", prune: deep });
       pollCount += 1;
       pollDiag.lastError = null;
       pollDiag.lastOkAt = now;
-      pollDiag.lastCount = coins.length;
+      pollDiag.lastCount = state.stats.live;
+      pollDiag.lastVia = deep ? "pump-deep" : "pump";
       if (pollCount === 1) {
-        console.log(`[server] loaded ${coins.length} ansem.io coins via ${pollDiag.lastVia}`);
+        console.log(`[server] loaded ${coins.length} pump.fun coins`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -61,7 +47,7 @@ async function main(): Promise<void> {
       console.error("[server] poll failed:", message);
     } finally {
       if (!stopped) {
-        timer = setTimeout(() => void poll(), config.pollIntervalMs);
+        timer = setTimeout(() => void poll(), FAST_INTERVAL_MS);
       }
     }
   };
@@ -76,7 +62,6 @@ async function main(): Promise<void> {
           ok: true,
           ...state.stats,
           solPriceUsd: state.solPriceUsd,
-          ansemPriceUsd: state.ansemPriceUsd,
           icons: iconCacheStats(),
           poll: pollDiag,
         }),
@@ -146,7 +131,6 @@ async function main(): Promise<void> {
     }
   };
 
-  seedFromSnapshot();
   void poll();
   void dex();
 

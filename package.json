@@ -2,7 +2,7 @@
   "name": "zapp",
   "private": true,
   "version": "0.1.0",
-  "description": "zTerminal — live market map for ansem.io Pump.fun launches",
+  "description": "zTerminal — live market map for every new pump.fun coin",
   "type": "module",
   "workspaces": [
     "server",
