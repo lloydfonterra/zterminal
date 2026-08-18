@@ -171,8 +171,13 @@ export class MarketState {
             ? 100
             : pool.coin.curvePct;
       const moved = pool.coin.marketCapUsd !== cap || pool.coin.priceUsd !== price;
-      pool.lastTradeAt = now;
-      if (moved) pool.history.push({ t: now, p: price });
+      const statusMoved = nextStatus !== pool.coin.status;
+      const curveMoved = nextCurve !== pool.coin.curvePct;
+      if (moved) {
+        pool.lastTradeAt = now;
+        pool.history.push({ t: now, p: price });
+        if (pool.history.length > 240) pool.history = pool.history.slice(-180);
+      }
       pool.coin = {
         ...pool.coin,
         priceUsd: price,
@@ -182,7 +187,15 @@ export class MarketState {
         status: nextStatus,
         curvePct: nextCurve,
       };
-      this.dirty.add(quote.mint);
+      if (
+        moved ||
+        statusMoved ||
+        curveMoved ||
+        quote.change24hPct != null ||
+        quote.volumeUsd24h != null
+      ) {
+        this.dirty.add(quote.mint);
+      }
     }
   }
 

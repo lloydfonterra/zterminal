@@ -231,9 +231,7 @@ export default function App() {
           <div className="brand" aria-label="zTerminal">
             <span className="brand-mark">z</span>
             <span className="brand-name">Terminal</span>
-            <span className="brand-cursor" aria-hidden="true">
-              █
-            </span>
+            <span className="brand-cursor" aria-hidden="true" />
             <span className="chain">pump.fun</span>
           </div>
 
@@ -256,7 +254,7 @@ export default function App() {
             <input
               type="search"
               className="search-input"
-              placeholder="> ticker / mint / CA"
+              placeholder="ticker / mint / CA"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);

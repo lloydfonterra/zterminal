@@ -76,22 +76,22 @@ export function formatLiveChange(token: Token): string {
   return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
 }
 
-/** Disc fill: curve vs migrated. */
+/** Disc fill: curve vs migrated. Forest ink, not phosphor. */
 export function fillColorForToken(token: Token): [number, number, number, number] {
   const alpha = token.txns24h === 0 ? 130 : Math.round(160 + Math.min(80, token.txns24h * 0.3));
-  if (token.status === "migrated") return [40, 230, 110, alpha];
-  return [36, 110, 68, alpha];
+  if (token.status === "migrated") return [20, 114, 74, alpha];
+  return [90, 78, 52, alpha];
 }
 
-/** Ring: recent PnL, or flat gray when there is no 5m print. */
+/** Ring: recent PnL, or flat ink when there is no 5m print. */
 export function ringColorForToken(token: Token): [number, number, number, number] {
   const change = liveChange(token);
-  if (change === null || Math.abs(change) < 0.01) return [48, 140, 82, 255];
+  if (change === null || Math.abs(change) < 0.01) return [109, 91, 68, 255];
   const intensity = Math.min(1, Math.abs(change) / 0.5);
   if (change > 0) {
-    return [Math.round(20 + 20 * intensity), Math.round(200 + 55 * intensity), Math.round(90 + 30 * intensity), 255];
+    return [Math.round(16 + 8 * intensity), Math.round(90 + 40 * intensity), Math.round(58 + 20 * intensity), 255];
   }
-  return [Math.round(200 + 40 * intensity), Math.round(50 - 10 * intensity), 70, 255];
+  return [Math.round(139 + 40 * intensity), Math.round(30 + 4 * intensity), 30, 255];
 }
 
 export function haloColorForToken(token: Token): [number, number, number, number] {
