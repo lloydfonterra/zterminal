@@ -9,6 +9,7 @@ export interface Feed {
   ansemPriceUsd: number;
   status: ConnectionState;
   setWatchMints: (mints: string[]) => void;
+  upsertToken: (token: Token) => void;
 }
 
 export function useFeed(publishIntervalMs = 32): Feed {
@@ -23,6 +24,11 @@ export function useFeed(publishIntervalMs = 32): Feed {
   const [status, setStatus] = useState<ConnectionState>("connecting");
 
   const setWatchMints = useCallback((_mints: string[]): void => {}, []);
+
+  const upsertToken = useCallback((token: Token): void => {
+    poolsRef.current.set(token.poolId, token);
+    setTokens([...poolsRef.current.values()]);
+  }, []);
 
   useEffect(() => {
     let socket: WebSocket | null = null;
@@ -90,5 +96,5 @@ export function useFeed(publishIntervalMs = 32): Feed {
     };
   }, [publishIntervalMs]);
 
-  return { tokens, solPriceUsd, ansemPriceUsd, status, setWatchMints };
+  return { tokens, solPriceUsd, ansemPriceUsd, status, setWatchMints, upsertToken };
 }

@@ -114,6 +114,7 @@ export async function fetchPumpCoin(mint: string): Promise<AnsemCoin | null> {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(8_000),
   });
+  if (res.status === 404) return null;
   if (!res.ok) throw new Error(`pump.fun coin HTTP ${res.status}`);
   const body = (await res.json()) as PumpCoin;
   return mapPumpCoin(body);

@@ -55,11 +55,15 @@ interface Pool {
 
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
+const MAX_PINS = 40;
+
 export class MarketState {
   private pools = new Map<string, Pool>();
   private dirty = new Set<string>();
   private created = new Set<string>();
   private removed = new Set<string>();
+  private pinned = new Set<string>();
+  private pinOrder: string[] = [];
 
   solPriceUsd = 0;
   ansemPriceUsd = 0;
@@ -91,7 +95,7 @@ export class MarketState {
           coin,
           source,
           createdAt,
-          lastTradeAt: createdAt,
+          lastTradeAt: 0,
           history: Number.isFinite(price) && price > 0 ? [{ t: now, p: price }] : [],
         });
         this.created.add(coin.mint);
@@ -124,7 +128,6 @@ export class MarketState {
 
       if (moved) {
         if (prev.coin.marketCapUsd !== next.marketCapUsd || prev.coin.priceUsd !== next.priceUsd) {
-          prev.lastTradeAt = now;
           if (Number.isFinite(price) && price > 0) prev.history.push({ t: now, p: price });
         }
         prev.coin = next;
@@ -135,7 +138,7 @@ export class MarketState {
 
     if (prune) {
       for (const [mint, pool] of this.pools) {
-        if (seen.has(mint)) continue;
+        if (seen.has(mint) || this.pinned.has(mint)) continue;
         if (prune === "source" && pool.source !== source) continue;
         this.pools.delete(mint);
         this.created.delete(mint);
@@ -168,12 +171,8 @@ export class MarketState {
             ? 100
             : pool.coin.curvePct;
       const moved = pool.coin.marketCapUsd !== cap || pool.coin.priceUsd !== price;
-      const statusMoved = nextStatus !== pool.coin.status;
-      const curveMoved = nextCurve !== pool.coin.curvePct;
-      if (moved) {
-        pool.lastTradeAt = now;
-        pool.history.push({ t: now, p: price });
-      }
+      pool.lastTradeAt = now;
+      if (moved) pool.history.push({ t: now, p: price });
       pool.coin = {
         ...pool.coin,
         priceUsd: price,
@@ -183,20 +182,27 @@ export class MarketState {
         status: nextStatus,
         curvePct: nextCurve,
       };
-      if (
-        moved ||
-        statusMoved ||
-        curveMoved ||
-        quote.change24hPct != null ||
-        quote.volumeUsd24h != null
-      ) {
-        this.dirty.add(quote.mint);
-      }
+      this.dirty.add(quote.mint);
     }
   }
 
   has(mint: string): boolean {
     return this.pools.has(mint);
+  }
+
+  pin(mint: string): void {
+    if (this.pinned.has(mint)) return;
+    this.pinned.add(mint);
+    this.pinOrder.push(mint);
+    while (this.pinOrder.length > MAX_PINS) {
+      const drop = this.pinOrder.shift();
+      if (drop) this.pinned.delete(drop);
+    }
+  }
+
+  wire(mint: string): WireToken | null {
+    const pool = this.pools.get(mint);
+    return pool ? this.toWire(pool) : null;
   }
 
   gc(now: number): void {

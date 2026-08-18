@@ -9,6 +9,7 @@ export default defineConfig({
       "/ws/public": { target: "ws://localhost:8787", ws: true },
       "/health": { target: "http://localhost:8787" },
       "/icon": { target: "http://localhost:8787" },
+      "/coin": { target: "http://localhost:8787" },
     },
   },
 });

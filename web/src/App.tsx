@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MarketMap } from "./MarketMap";
 import { MoversList } from "./MoversList";
 import { useFeed } from "./useFeed";
@@ -28,12 +28,21 @@ const STATUSES: Array<{ label: string; value: "all" | "on_curve" | "migrated" }>
   { label: "migrated", value: "migrated" },
 ];
 
+const SHOWS: Array<{ label: string; value: "all" | "socials" | "hide_farm" }> = [
+  { label: "all", value: "all" },
+  { label: "socials", value: "socials" },
+  { label: "hide ×5+", value: "hide_farm" },
+];
+
+const FARM_MIN = 5;
+
 
 export default function App() {
-  const { tokens, solPriceUsd, status, setWatchMints } = useFeed();
+  const { tokens, solPriceUsd, status, setWatchMints, upsertToken } = useFeed();
   const [windowIndex, setWindowIndex] = useState(1);
   const [capIndex, setCapIndex] = useState(1);
   const [statusFilter, setStatusFilter] = useState<(typeof STATUSES)[number]["value"]>("all");
+  const [showFilter, setShowFilter] = useState<(typeof SHOWS)[number]["value"]>("all");
   const [chart, setChart] = useState<ChartProvider>("pumpfun");
   const [moreOpen, setMoreOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -41,6 +50,8 @@ export default function App() {
   const [inspectId, setInspectId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [copiedToast, setCopiedToast] = useState<string | null>(null);
+  const [lookup, setLookup] = useState<"idle" | "loading" | "miss">("idle");
+  const lookupBusy = useRef(false);
   const [clock, setClock] = useState(() => formatClock(new Date()));
   const [now, setNow] = useState(() => Date.now());
 
@@ -64,15 +75,30 @@ export default function App() {
     };
   }, [windowIndex, capIndex, solPriceUsd]);
 
+  const creatorCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const token of tokens) {
+      const creator = token.creator;
+      if (!creator) continue;
+      counts.set(creator, (counts.get(creator) ?? 0) + 1);
+    }
+    return counts;
+  }, [tokens]);
+
   const inWindow = useMemo(() => {
     const cutoff = now - config.windowSeconds * 1000;
     return tokens.filter((t) => {
       if (t.createdAt < cutoff) return false;
       if (t.marketCapUsd < config.minCapUsd || t.marketCapUsd > config.maxCapUsd) return false;
       if (statusFilter !== "all" && t.status !== statusFilter) return false;
+      if (showFilter === "socials" && !hasSocials(t)) return false;
+      if (showFilter === "hide_farm") {
+        const n = t.creator ? (creatorCounts.get(t.creator) ?? 0) : 0;
+        if (n >= FARM_MIN) return false;
+      }
       return true;
     });
-  }, [tokens, config, statusFilter, now]);
+  }, [tokens, config, statusFilter, showFilter, creatorCounts, now]);
 
   useEffect(() => {
     const mints = inWindow.map((t) => t.poolId);
@@ -96,17 +122,15 @@ export default function App() {
       .slice(0, 8);
   }, [search, tokens]);
 
-  const inIds = useMemo(() => new Set(inWindow.map((t) => t.poolId)), [inWindow]);
+  const searchQuery = search.trim();
+  const exactMint = useMemo(() => {
+    if (!isSolanaMint(searchQuery)) return null;
+    const q = searchQuery.toLowerCase();
+    return tokens.find((t) => t.token.toLowerCase() === q) ?? null;
+  }, [searchQuery, tokens]);
+  const canLookup = isSolanaMint(searchQuery) && !exactMint;
 
-  const creatorCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const token of tokens) {
-      const creator = token.creator;
-      if (!creator) continue;
-      counts.set(creator, (counts.get(creator) ?? 0) + 1);
-    }
-    return counts;
-  }, [tokens]);
+  const inIds = useMemo(() => new Set(inWindow.map((t) => t.poolId)), [inWindow]);
 
   const mapTokens = useMemo(() => {
     const extra = tokens.filter((t) => t.poolId === selectedId || t.poolId === focusId);
@@ -137,7 +161,41 @@ export default function App() {
     setFocusId(token.poolId);
     setInspectId(token.poolId);
     setSearch("");
+    setLookup("idle");
     copyCa(token);
+  };
+
+  const lookupCa = async (mint: string): Promise<void> => {
+    if (lookupBusy.current) return;
+    lookupBusy.current = true;
+    setLookup("loading");
+    try {
+      const res = await fetch(`/coin/${encodeURIComponent(mint)}`);
+      const body = (await res.json()) as { ok?: boolean; token?: Token };
+      if (!res.ok || !body.ok || !body.token) {
+        setLookup("miss");
+        return;
+      }
+      upsertToken(body.token);
+      jumpTo(body.token);
+    } catch {
+      setLookup("miss");
+    } finally {
+      lookupBusy.current = false;
+    }
+  };
+
+  const submitSearch = (): void => {
+    const q = search.trim();
+    if (exactMint) {
+      jumpTo(exactMint);
+      return;
+    }
+    if (isSolanaMint(q)) {
+      void lookupCa(q);
+      return;
+    }
+    if (searchHits[0]) jumpTo(searchHits[0]);
   };
 
   const pickFromList = (token: Token): void => {
@@ -198,21 +256,27 @@ export default function App() {
             <input
               type="search"
               className="search-input"
-              placeholder="> ticker / mint"
+              placeholder="> ticker / mint / CA"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setLookup("idle");
+              }}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && searchHits[0]) jumpTo(searchHits[0]);
+                if (e.key === "Enter") submitSearch();
                 if (e.key === "Escape") {
                   e.stopPropagation();
                   setSearch("");
+                  setLookup("idle");
                 }
               }}
               aria-label="Search tokens"
             />
             {search.trim() && (
               <ul className="search-results">
-                {searchHits.length === 0 && <li className="search-empty">no hits</li>}
+                {searchHits.length === 0 && !canLookup && (
+                  <li className="search-empty">no hits</li>
+                )}
                 {searchHits.map((t) => (
                   <li key={t.poolId}>
                     <button type="button" onClick={() => jumpTo(t)}>
@@ -222,6 +286,21 @@ export default function App() {
                     </button>
                   </li>
                 ))}
+                {canLookup && (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => void lookupCa(searchQuery)}
+                      disabled={lookup === "loading"}
+                    >
+                      <span className="search-sym">
+                        {lookup === "loading" ? "…" : "lookup"}
+                      </span>
+                      <span className="search-name">{shortMint(searchQuery)}</span>
+                      {lookup === "miss" && <span className="search-out">not found</span>}
+                    </button>
+                  </li>
+                )}
               </ul>
             )}
           </div>
@@ -274,6 +353,17 @@ export default function App() {
                 key={s.value}
                 className={s.value === statusFilter ? "chip active" : "chip"}
                 onClick={() => setStatusFilter(s.value)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </Segment>
+          <Segment label="show">
+            {SHOWS.map((s) => (
+              <button
+                key={s.value}
+                className={s.value === showFilter ? "chip active" : "chip"}
+                onClick={() => setShowFilter(s.value)}
               >
                 {s.label}
               </button>
@@ -418,6 +508,20 @@ function formatClock(date: Date): string {
     second: "2-digit",
     hour12: false,
   });
+}
+
+function hasSocials(token: Token): boolean {
+  return Boolean(token.twitter || token.telegram || token.website);
+}
+
+function isSolanaMint(value: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value.trim());
+}
+
+function shortMint(mint: string): string {
+  const value = mint.trim();
+  if (value.length < 10) return value;
+  return `${value.slice(0, 4)}…${value.slice(-4)}`;
 }
 
 function searchScore(token: Token, q: string): number {

@@ -162,6 +162,51 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (url.pathname.startsWith("/coin/")) {
+      const mint = decodeURIComponent(url.pathname.slice("/coin/".length)).trim();
+      if (!isSolanaMint(mint)) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "bad mint" }));
+        return;
+      }
+
+      const existing = state.wire(mint);
+      if (existing) {
+        state.pin(mint);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, token: existing }));
+        return;
+      }
+
+      void fetchPumpCoin(mint)
+        .then((coin) => {
+          if (!coin) {
+            res.writeHead(404, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "not found" }));
+            return;
+          }
+          state.applyCoins([coin], Date.now(), { source: "pump", prune: false });
+          state.pin(mint);
+          const token = state.wire(mint);
+          if (!token) {
+            res.writeHead(404, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "not found" }));
+            return;
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, token }));
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error("[server] coin lookup failed:", message);
+          if (!res.headersSent) {
+            res.writeHead(502, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "lookup failed" }));
+          }
+        });
+      return;
+    }
+
     if (url.pathname.startsWith("/icon/")) {
       serveIcon(req, res, state);
       return;
@@ -230,6 +275,10 @@ async function main(): Promise<void> {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+}
+
+function isSolanaMint(value: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
 }
 
 main().catch((error) => {
