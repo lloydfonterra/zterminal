@@ -3,14 +3,15 @@ import DeckGL from "@deck.gl/react";
 import { OrthographicView } from "@deck.gl/core";
 import { IconLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import type { Token } from "./types";
-import { IconAtlas, chartUrl, logoUrl, type ChartProvider } from "./iconAtlas";
+import { IconAtlas, logoUrl, type ChartProvider } from "./iconAtlas";
+import { InspectCard } from "./InspectCard";
 import {
-  GRADUATE_MCAP_USD,
   PADDING,
   ageGridlines,
   capGridlines,
   fillColorForToken,
   formatAge,
+  formatCurvePct,
   formatLiveChange,
   formatUsd,
   formatUsdMoney,
@@ -26,8 +27,8 @@ import {
 } from "./scales";
 
 /** Log-space ease toward the live chart print. Long enough to glide, short enough to track the tape. */
-const SMOOTH_MS = 380;
-const LOGO_MIN_USD = 2_500;
+const SMOOTH_MS = 220;
+const LOGO_MIN_USD = 1_000;
 const LABEL_MIN_RADIUS = 11;
 
 interface Props {
@@ -170,9 +171,9 @@ export function MarketMap({
     return out;
   }, [selected, focusToken]);
 
-  const openChart = (token: Token): void => {
-    onSelect(token.poolId);
-    window.open(chartUrl(chart, token.token), "_blank", "noopener,noreferrer");
+  const pick = (object: unknown): void => {
+    const token = pickedToken(object);
+    onSelect(token ? token.poolId : null);
   };
 
   const atlasTexture = atlas.atlas;
@@ -200,10 +201,6 @@ export function MarketMap({
       stroked: true,
       radiusUnits: "pixels",
       pickable: true,
-      onClick: ({ object }) => {
-        if (object) openChart(object as Token);
-        return true;
-      },
       updateTriggers: { getPosition: positionTrigger, getRadius: positionTrigger },
     }),
 
@@ -220,10 +217,6 @@ export function MarketMap({
       getFillColor: [16, 18, 24, 255],
       radiusUnits: "pixels",
       pickable: true,
-      onClick: ({ object }) => {
-        if (object) openChart((object as Placed).token);
-        return true;
-      },
       updateTriggers: { getPosition: positionTrigger, getRadius: [config], getLineWidth: [config] },
     }),
 
@@ -239,10 +232,6 @@ export function MarketMap({
             getSize: (p) => p.radius * 2 - Math.max(2.5, p.radius * 0.3),
             sizeUnits: "pixels",
             pickable: true,
-            onClick: ({ object }) => {
-              if (object) openChart((object as Placed).token);
-              return true;
-            },
             updateTriggers: { getPosition: positionTrigger, getSize: [config] },
           }),
         ]
@@ -319,11 +308,18 @@ export function MarketMap({
           const token = pickedToken(object);
           setHover(token ? { token, x, y } : null);
         }}
-        onClick={({ object }) => {
-          if (!object) onSelect(null);
-        }}
+        onClick={({ object }) => pick(object)}
       />
-      {hover && (
+      {selected && (
+        <InspectCard
+          token={selected}
+          now={now}
+          chart={chart}
+          {...cardBeside(position(selected), radiusOf(selected), view)}
+          onClose={() => onSelect(null)}
+        />
+      )}
+      {hover && hover.token.poolId !== selectedId && (
         <div
           className="map-tooltip"
           style={{ left: hover.x + 14, top: hover.y + 12 }}
@@ -339,7 +335,7 @@ export function MarketMap({
             <span className={changeTone(hover.token)}>{formatLiveChange(hover.token)}</span>
           </div>
           <div className="map-tooltip-meta">
-            {hover.token.status === "migrated" ? "migrated" : `${hover.token.curvePct}% curve`}
+            {hover.token.status === "migrated" ? "migrated" : `${formatCurvePct(hover.token.curvePct)} curve`}
             {" · "}
             {formatAge(now - hover.token.createdAt)}
           </div>
@@ -396,7 +392,7 @@ function MapGrid({ view, config }: { view: Viewport; config: MapConfig }) {
   const caps = capGridlines(config);
   const ages = ageGridlines(config);
   const grad = showsGraduation(config);
-  const gradY = yForCap(GRADUATE_MCAP_USD, view, config);
+  const gradY = yForCap(config.graduateMcapUsd, view, config);
 
   return (
     <svg className="grid" width={view.width} height={view.height} aria-hidden="true">
@@ -421,7 +417,7 @@ function MapGrid({ view, config }: { view: Viewport; config: MapConfig }) {
             y2={gradY}
           />
           <text className="grad-label" x={PADDING.left - 10} y={gradY + 3} textAnchor="end">
-            grad
+            {formatUsd(config.graduateMcapUsd)}
           </text>
         </g>
       )}
@@ -446,4 +442,20 @@ function MapGrid({ view, config }: { view: Viewport; config: MapConfig }) {
 function shortMint(mint: string): string {
   if (mint.length < 10) return mint;
   return `${mint.slice(0, 4)}…${mint.slice(-4)}`;
+}
+
+const CARD_W = 280;
+const CARD_H = 168;
+const CARD_GAP = 14;
+
+function cardBeside(
+  [x, y]: [number, number],
+  radius: number,
+  view: Viewport,
+): { x: number; y: number } {
+  let left = x + radius + CARD_GAP;
+  if (left + CARD_W > view.width - 8) left = x - radius - CARD_GAP - CARD_W;
+  left = Math.max(8, Math.min(left, view.width - CARD_W - 8));
+  const top = Math.max(8, Math.min(y - CARD_H / 2, view.height - CARD_H - 8));
+  return { x: left, y: top };
 }

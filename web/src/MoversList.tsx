@@ -1,25 +1,20 @@
 import type { Token } from "./types";
 import { logoUrl } from "./iconAtlas";
-import { formatLiveChange, formatUsdMoney, liveChange } from "./scales";
-
-export type MoversSort = "climbers" | "volume";
+import { formatCurvePct, formatLiveChange, formatUsdMoney, liveChange } from "./scales";
 
 interface Props {
   tokens: Token[];
   selectedId: string | null;
-  sort: MoversSort;
-  onSort: (sort: MoversSort) => void;
   onSelect: (token: Token) => void;
 }
 
 const LIMIT = 16;
 
-export function MoversList({ tokens, selectedId, sort, onSort, onSelect }: Props) {
+export function MoversList({ tokens, selectedId, onSelect }: Props) {
   const ranked = [...tokens]
-    .sort((a, b) =>
-      sort === "climbers"
-        ? (liveChange(b) ?? Number.NEGATIVE_INFINITY) - (liveChange(a) ?? Number.NEGATIVE_INFINITY)
-        : b.volumeUsd24h - a.volumeUsd24h,
+    .sort(
+      (a, b) =>
+        (liveChange(b) ?? Number.NEGATIVE_INFINITY) - (liveChange(a) ?? Number.NEGATIVE_INFINITY),
     )
     .slice(0, LIMIT);
 
@@ -27,22 +22,6 @@ export function MoversList({ tokens, selectedId, sort, onSort, onSelect }: Props
     <aside className="movers" aria-label="Top movers">
       <div className="movers-head">
         <span className="movers-title">movers</span>
-        <div className="seg">
-          <button
-            type="button"
-            className={sort === "climbers" ? "chip active" : "chip"}
-            onClick={() => onSort("climbers")}
-          >
-            %
-          </button>
-          <button
-            type="button"
-            className={sort === "volume" ? "chip active" : "chip"}
-            onClick={() => onSort("volume")}
-          >
-            vol
-          </button>
-        </div>
       </div>
 
       <ul className="movers-list">
@@ -69,7 +48,7 @@ export function MoversList({ tokens, selectedId, sort, onSort, onSelect }: Props
                 <span className="movers-id">
                   <span className="movers-sym">{token.symbol.slice(0, 10)}</span>
                   <span className={`movers-flag ${token.status}`}>
-                    {token.status === "migrated" ? "migrated" : `${token.curvePct}%`}
+                    {token.status === "migrated" ? "migrated" : formatCurvePct(token.curvePct)}
                   </span>
                 </span>
                 <span className="movers-mcap">{formatUsdMoney(token.marketCapUsd)}</span>

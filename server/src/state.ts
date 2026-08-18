@@ -37,6 +37,8 @@ export interface PriceQuote {
   change5mPct?: number | null;
   change24hPct?: number | null;
   volumeUsd24h?: number | null;
+  status?: "on_curve" | "migrated";
+  curvePct?: number | null;
 }
 
 interface Pool {
@@ -57,6 +59,7 @@ export class MarketState {
 
   solPriceUsd = 0;
   ansemPriceUsd = 0;
+  private lastSentSol = 0;
 
   applyCoins(
     coins: AnsemCoin[],
@@ -144,7 +147,21 @@ export class MarketState {
       const cap = Number(quote.marketCapUsd);
       if (!(price > 0) || !(cap > 0)) continue;
 
+      const nextStatus =
+        quote.status === "migrated"
+          ? "migrated"
+          : quote.status === "on_curve" && pool.coin.status !== "migrated"
+            ? "on_curve"
+            : pool.coin.status;
+      const nextCurve =
+        quote.curvePct != null && Number.isFinite(quote.curvePct)
+          ? quote.curvePct
+          : nextStatus === "migrated"
+            ? 100
+            : pool.coin.curvePct;
       const moved = pool.coin.marketCapUsd !== cap || pool.coin.priceUsd !== price;
+      const statusMoved = nextStatus !== pool.coin.status;
+      const curveMoved = nextCurve !== pool.coin.curvePct;
       if (moved) {
         pool.lastTradeAt = now;
         pool.history.push({ t: now, p: price });
@@ -155,11 +172,26 @@ export class MarketState {
         marketCapUsd: cap,
         volume24hUsd: quote.volumeUsd24h ?? pool.coin.volume24hUsd,
         change24hPct: quote.change24hPct ?? pool.coin.change24hPct,
+        status: nextStatus,
+        curvePct: nextCurve,
       };
-      if (moved || quote.change24hPct != null || quote.volumeUsd24h != null) {
+      if (
+        moved ||
+        statusMoved ||
+        curveMoved ||
+        quote.change24hPct != null ||
+        quote.volumeUsd24h != null
+      ) {
         this.dirty.add(quote.mint);
       }
     }
+  }
+
+  has(mint: string): boolean {
+    return this.pools.has(mint);
+  }
+
+  gc(now: number): void {
     this.trimHistory(now);
   }
 
@@ -200,7 +232,7 @@ export class MarketState {
       slug: coin.slug,
       tier: coin.tier || "free",
       status: coin.status || "on_curve",
-      curvePct: Number(coin.curvePct) || 0,
+      curvePct: Number.isFinite(Number(coin.curvePct)) ? Number(coin.curvePct) : 0,
       createdAt: pool.createdAt,
       lastTradeAt: pool.lastTradeAt,
       priceUsd: price,
@@ -218,6 +250,7 @@ export class MarketState {
     ansemPriceUsd: number;
     new: WireToken[];
   } {
+    this.lastSentSol = this.solPriceUsd;
     return {
       payloadType: "snapshot",
       solPriceUsd: this.solPriceUsd,
@@ -252,7 +285,11 @@ export class MarketState {
     this.dirty.clear();
     this.removed.clear();
 
-    if (created.length === 0 && updated.length === 0 && removed.length === 0) return null;
+    const solMoved = this.solPriceUsd !== this.lastSentSol;
+    this.lastSentSol = this.solPriceUsd;
+    if (created.length === 0 && updated.length === 0 && removed.length === 0 && !solMoved) {
+      return null;
+    }
     return {
       payloadType: "delta",
       solPriceUsd: this.solPriceUsd,

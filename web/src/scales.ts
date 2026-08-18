@@ -9,10 +9,33 @@ export interface MapConfig {
   windowSeconds: number;
   minCapUsd: number;
   maxCapUsd: number;
+  graduateMcapUsd: number;
 }
 
-/** Pump.fun migration band — ~85 SOL on the curve, about $69K. */
-export const GRADUATE_MCAP_USD = 69_000;
+/**
+ * Pump.fun constant-product curve (UI units):
+ *   virtual SOL starts at 30, virtual tokens at 1_073_000_191
+ *   85 real SOL bought → virtual SOL = 115
+ *   mcap_sol = 115² / 30 / 1_073_000_191 * 1e9 ≈ 410.84 SOL
+ * USD line = that × live SOL. At $76 SOL this is ~$31.2K (what GMGN draws),
+ * not the old "$69K" rule of thumb from when SOL was ~$168.
+ */
+export const PUMP_VIRTUAL_SOL_INITIAL = 30;
+export const PUMP_VIRTUAL_TOKENS_INITIAL = 1_073_000_191;
+export const PUMP_GRADUATE_REAL_SOL = 85;
+export const PUMP_DISPLAY_SUPPLY = 1_000_000_000;
+
+export const GRADUATE_MCAP_SOL =
+  ((PUMP_VIRTUAL_SOL_INITIAL + PUMP_GRADUATE_REAL_SOL) ** 2 /
+    PUMP_VIRTUAL_SOL_INITIAL /
+    PUMP_VIRTUAL_TOKENS_INITIAL) *
+  PUMP_DISPLAY_SUPPLY;
+
+export function graduateMcapUsd(solPriceUsd: number): number {
+  if (!(solPriceUsd > 0)) return GRADUATE_MCAP_SOL * 76;
+  return GRADUATE_MCAP_SOL * solPriceUsd;
+}
+
 export const PADDING = { left: 72, right: 24, top: 28, bottom: 34 };
 const CHANGE_CLAMP = 9.99;
 
@@ -77,23 +100,27 @@ export function haloColorForToken(token: Token): [number, number, number, number
 }
 
 const MCAP_AXIS_USD = [
-  5_000_000, 1_000_000, 500_000, 200_000, 100_000, 69_000, 50_000, 30_000, 10_000, 5_000, 2_000,
-  1_000, 250,
+  1_000_000, 500_000, 200_000, 100_000, 50_000, 30_000, 20_000, 10_000, 5_000, 2_000, 1_000, 250,
 ] as const;
 
 export function capGridlines(cfg: MapConfig): number[] {
   return MCAP_AXIS_USD.filter(
-    (usd) => usd !== GRADUATE_MCAP_USD && usd >= cfg.minCapUsd * 0.99 && usd <= cfg.maxCapUsd * 1.01,
+    (usd) => usd >= cfg.minCapUsd * 0.99 && usd <= cfg.maxCapUsd * 1.01,
   );
 }
 
 export function showsGraduation(cfg: MapConfig): boolean {
-  return GRADUATE_MCAP_USD >= cfg.minCapUsd * 0.99 && GRADUATE_MCAP_USD <= cfg.maxCapUsd * 1.01;
+  const grad = cfg.graduateMcapUsd;
+  return grad > 0 && grad >= cfg.minCapUsd * 0.99 && grad <= cfg.maxCapUsd * 1.01;
 }
 
-export function ageGridlines(cfg: MapConfig, count = 6): number[] {
+const AGE_STEPS_SEC = [15, 30, 60, 120, 180, 300, 600, 900, 1_800, 3_600];
+
+export function ageGridlines(cfg: MapConfig): number[] {
+  const span = Math.max(1, cfg.windowSeconds);
+  const step = AGE_STEPS_SEC.find((s) => span / s <= 6) ?? Math.ceil(span / 6);
   const out: number[] = [];
-  for (let i = 0; i <= count; i += 1) out.push((cfg.windowSeconds * 1000 * i) / count);
+  for (let t = 0; t <= span; t += step) out.push(t * 1000);
   return out;
 }
 
@@ -117,11 +144,18 @@ export function formatUsdMoney(usd: number): string {
 }
 
 export function formatAge(ms: number): string {
+  if (ms < 45_000) return `${Math.max(0, Math.round(ms / 1000))}s`;
   const totalMinutes = Math.round(ms / 60_000);
   if (totalMinutes < 60) return `${totalMinutes}m`;
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return minutes === 0 ? `${hours}h` : `${hours}h${minutes}m`;
+}
+
+export function formatCurvePct(pct: number): string {
+  if (!(pct > 0)) return "0%";
+  if (pct >= 99.5) return "99%";
+  return pct >= 10 ? `${Math.round(pct)}%` : `${pct.toFixed(1)}%`;
 }
 
 function clamp01(value: number): number {

@@ -1,56 +1,149 @@
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
-import { fetchDexQuotes, fetchSolUsd } from "./dex.js";
 import { iconCacheStats, serveIcon } from "./icons.js";
-import { fetchPumpPage, fetchRecentPumpCoins, pollDiag } from "./pumpfun.js";
-import { MarketState } from "./state.js";
+import {
+  fetchPumpCoin,
+  fetchPumpPage,
+  fetchRecentPumpCoins,
+  fetchSolPrice,
+  listenPumpTrades,
+  pollDiag,
+} from "./pumpfun.js";
+import { MarketState, type PriceQuote } from "./state.js";
 import { serveWeb } from "./static.js";
 
-const DELTA_INTERVAL_MS = 200;
+const DELTA_INTERVAL_MS = 50;
+const TRADE_FLUSH_MS = 25;
 const PING_INTERVAL_MS = 15_000;
-const DEX_INTERVAL_MS = 2_500;
-const DEX_NEWEST = 80;
-const FAST_INTERVAL_MS = 2_500;
-const DEEP_EVERY = 8;
+const NEW_INTERVAL_MS = 1_000;
+const HOT_INTERVAL_MS = 3_000;
+const SOL_INTERVAL_MS = 5_000;
+const DEEP_INTERVAL_MS = 30_000;
+const GC_INTERVAL_MS = 2_000;
 const KEEP_MS = 24 * 60 * 60 * 1000;
 const MAX_COINS = 1500;
-/** Rebuild trigger: frontend lives in web/, so watch paths must include the whole repo. */
+const MAX_NEW_FETCHES = 6;
 
 async function main(): Promise<void> {
   const state = new MarketState();
-  let pollCount = 0;
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timers = new Set<ReturnType<typeof setTimeout>>();
   let stopped = false;
-  let dexOffset = 0;
+  let liveCount = 0;
+  let rotateOffset = 50;
+  const pendingTrades = new Map<string, PriceQuote>();
+  const fetching = new Set<string>();
 
-  const poll = async (): Promise<void> => {
+  const later = (fn: () => void, ms: number): void => {
+    const timer = setTimeout(() => {
+      timers.delete(timer);
+      fn();
+    }, ms);
+    timers.add(timer);
+  };
+
+  const markOk = (via: string, now: number): void => {
+    pollDiag.lastError = null;
+    pollDiag.lastOkAt = now;
+    pollDiag.lastCount = state.stats.live;
+    pollDiag.lastVia = via;
+  };
+
+  const newest = async (): Promise<void> => {
     try {
       const now = Date.now();
-      const deep = pollCount % DEEP_EVERY === 0;
-      const coins = deep
-        ? await fetchRecentPumpCoins(KEEP_MS, MAX_COINS)
-        : await fetchPumpPage(0);
+      const coins = await fetchPumpPage(0);
       if (coins.length === 0) throw new Error("empty pump.fun list");
-      state.applyCoins(coins, now, { source: "pump", prune: deep });
-      pollCount += 1;
-      pollDiag.lastError = null;
-      pollDiag.lastOkAt = now;
-      pollDiag.lastCount = state.stats.live;
-      pollDiag.lastVia = deep ? "pump-deep" : "pump";
-      if (pollCount === 1) {
-        console.log(`[server] loaded ${coins.length} pump.fun coins`);
+      state.applyCoins(coins, now, { source: "pump", prune: false });
+      liveCount += 1;
+      if (pollDiag.nats !== "live") markOk("pump", now);
+      if (liveCount === 1) {
+        console.log(
+          `[server] pump.fun tape + REST, SOL $${state.solPriceUsd > 0 ? state.solPriceUsd.toFixed(2) : "—"}`,
+        );
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      pollDiag.lastError = message;
-      console.error("[server] poll failed:", message);
+      if (pollDiag.nats !== "live") pollDiag.lastError = message;
+      console.error("[server] newest poll failed:", message);
     } finally {
-      if (!stopped) {
-        timer = setTimeout(() => void poll(), FAST_INTERVAL_MS);
-      }
+      if (!stopped) later(() => void newest(), NEW_INTERVAL_MS);
     }
   };
+
+  const hot = async (): Promise<void> => {
+    try {
+      const coins = await fetchPumpPage(rotateOffset, "last_trade_timestamp");
+      rotateOffset += 50;
+      if (rotateOffset >= 200) rotateOffset = 50;
+      if (coins.length > 0) {
+        state.applyCoins(coins, Date.now(), { source: "pump", prune: false });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[server] hot poll failed:", message);
+    } finally {
+      if (!stopped) later(() => void hot(), HOT_INTERVAL_MS);
+    }
+  };
+
+  const sol = async (): Promise<void> => {
+    try {
+      const price = await fetchSolPrice();
+      if (price) state.solPriceUsd = price;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[server] pump.fun sol-price failed:", message);
+    } finally {
+      if (!stopped) later(() => void sol(), SOL_INTERVAL_MS);
+    }
+  };
+
+  const deep = async (): Promise<void> => {
+    try {
+      const now = Date.now();
+      const coins = await fetchRecentPumpCoins(KEEP_MS, MAX_COINS);
+      if (coins.length === 0) throw new Error("empty pump.fun list");
+      state.applyCoins(coins, now, { source: "pump", prune: true });
+      if (pollDiag.nats !== "live") markOk("pump-deep", now);
+      if (state.stats.live > 0 && liveCount === 0) {
+        console.log(
+          `[server] loaded ${state.stats.live} pump.fun coins @ SOL $${state.solPriceUsd > 0 ? state.solPriceUsd.toFixed(2) : "—"}`,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (pollDiag.nats !== "live") pollDiag.lastError = message;
+      console.error("[server] deep poll failed:", message);
+    } finally {
+      if (!stopped) later(() => void deep(), DEEP_INTERVAL_MS);
+    }
+  };
+
+  const hydrate = (mint: string): void => {
+    if (state.has(mint) || fetching.has(mint) || fetching.size >= MAX_NEW_FETCHES) return;
+    fetching.add(mint);
+    void fetchPumpCoin(mint)
+      .then((coin) => {
+        if (coin) state.applyCoins([coin], Date.now(), { source: "pump", prune: false });
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("[server] coin hydrate failed:", message);
+      })
+      .finally(() => fetching.delete(mint));
+  };
+
+  const stopTrades = listenPumpTrades((trade) => {
+    pendingTrades.set(trade.mint, {
+      mint: trade.mint,
+      priceUsd: trade.priceUsd,
+      marketCapUsd: trade.marketCapUsd,
+      status: trade.isBondingCurve ? "on_curve" : "migrated",
+      curvePct: trade.curvePct,
+    });
+    if (trade.isBondingCurve) hydrate(trade.mint);
+  });
 
   const http = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -99,6 +192,15 @@ async function main(): Promise<void> {
   };
 
   setInterval(() => {
+    if (pendingTrades.size === 0) return;
+    const quotes = [...pendingTrades.values()];
+    pendingTrades.clear();
+    state.applyQuotes(quotes, Date.now());
+  }, TRADE_FLUSH_MS);
+
+  setInterval(() => state.gc(Date.now()), GC_INTERVAL_MS);
+
+  setInterval(() => {
     const delta = state.drainDelta();
     if (!delta || clients.size === 0) return;
     broadcast(JSON.stringify(delta));
@@ -111,33 +213,17 @@ async function main(): Promise<void> {
     console.log(`[server] feed at ws://${config.host}:${config.port}/ws/public`);
   });
 
-  const dex = async (): Promise<void> => {
-    try {
-      const sol = await fetchSolUsd();
-      if (sol) state.solPriceUsd = sol;
-      const newest = state.newestMints(DEX_NEWEST);
-      const all = state.newestMints(2_000);
-      const rotate = all.slice(dexOffset, dexOffset + 20);
-      dexOffset = all.length === 0 ? 0 : (dexOffset + 20) % all.length;
-      const mints = [...new Set([...newest, ...rotate])];
-      if (mints.length > 0) {
-        const quotes = await fetchDexQuotes(mints);
-        state.applyQuotes(quotes, Date.now());
-      }
-    } catch (error) {
-      console.error("[server] dex poll failed:", error instanceof Error ? error.message : error);
-    } finally {
-      if (!stopped) setTimeout(() => void dex(), DEX_INTERVAL_MS);
-    }
-  };
-
-  void poll();
-  void dex();
+  void sol();
+  void deep();
+  void newest();
+  void hot();
 
   const shutdown = (): void => {
     console.log("\n[server] shutting down");
     stopped = true;
-    if (timer) clearTimeout(timer);
+    stopTrades();
+    for (const timer of timers) clearTimeout(timer);
+    timers.clear();
     for (const socket of clients) socket.close();
     http.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 2000);

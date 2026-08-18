@@ -1,16 +1,35 @@
+import { connect, StringCodec, type NatsConnection } from "nats.ws";
 import type { AnsemCoin } from "./ansem.js";
 
 const PUMP_COINS = "https://frontend-api-v3.pump.fun/coins";
+const PUMP_SOL = "https://frontend-api-v3.pump.fun/sol-price";
 const PAGE = 50;
 const PUMP_SUPPLY = 1_000_000_000;
 const GRADUATE_SOL = 85;
+const TRADE_SUBJECT = "unifiedTradeEvent";
+const NATS_UNIFIED = {
+  servers: "wss://unified-prod.nats.realtime.pump.fun",
+  user: "subscriber",
+  pass: "OX745xvUbNQMuFqV",
+};
 
 export const pollDiag = {
   lastError: null as string | null,
   lastOkAt: 0,
   lastCount: 0,
   lastVia: null as string | null,
+  nats: "down" as "down" | "live",
+  tradesPerSec: 0,
+  natsMsgs: 0,
 };
+
+export interface PumpTrade {
+  mint: string;
+  priceUsd: number;
+  marketCapUsd: number;
+  isBondingCurve: boolean;
+  curvePct: number;
+}
 
 interface PumpCoin {
   mint?: string;
@@ -25,13 +44,28 @@ interface PumpCoin {
   usd_market_cap?: number;
   market_cap_usd?: number;
   real_sol_reserves?: number;
+  virtual_sol_reserves?: number;
 }
 
-export async function fetchPumpPage(offset: number): Promise<AnsemCoin[]> {
+export async function fetchSolPrice(): Promise<number | null> {
+  const res = await fetch(PUMP_SOL, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) throw new Error(`pump.fun sol-price HTTP ${res.status}`);
+  const body = (await res.json()) as { solPrice?: number };
+  const price = Number(body.solPrice);
+  return price > 0 ? price : null;
+}
+
+export async function fetchPumpPage(
+  offset: number,
+  sort: "created_timestamp" | "last_trade_timestamp" = "created_timestamp",
+): Promise<AnsemCoin[]> {
   const url = new URL(PUMP_COINS);
   url.searchParams.set("offset", String(offset));
   url.searchParams.set("limit", String(PAGE));
-  url.searchParams.set("sort", "created_timestamp");
+  url.searchParams.set("sort", sort);
   url.searchParams.set("order", "desc");
   url.searchParams.set("includeNsfw", "true");
 
@@ -72,6 +106,135 @@ export async function fetchRecentPumpCoins(
   return out;
 }
 
+export async function fetchPumpCoin(mint: string): Promise<AnsemCoin | null> {
+  const res = await fetch(`${PUMP_COINS}/${encodeURIComponent(mint)}`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) throw new Error(`pump.fun coin HTTP ${res.status}`);
+  const body = (await res.json()) as PumpCoin;
+  return mapPumpCoin(body);
+}
+
+export function listenPumpTrades(onTrade: (trade: PumpTrade) => void): () => void {
+  let stopped = false;
+  let nc: NatsConnection | null = null;
+  let tradeWindow = 0;
+  let tradeWindowAt = Date.now();
+
+  const run = async (): Promise<void> => {
+    while (!stopped) {
+      try {
+        nc = await connect({
+          servers: NATS_UNIFIED.servers,
+          user: NATS_UNIFIED.user,
+          pass: NATS_UNIFIED.pass,
+          timeout: 8_000,
+          maxReconnectAttempts: -1,
+          reconnectTimeWait: 1_000,
+        });
+        pollDiag.nats = "live";
+        pollDiag.lastVia = "pump-nats";
+        pollDiag.lastError = null;
+        console.log("[server] pump.fun nats live");
+        const sc = StringCodec();
+        const sub = nc.subscribe(TRADE_SUBJECT);
+        for await (const msg of sub) {
+          if (stopped) break;
+          pollDiag.natsMsgs += 1;
+          const trade = mapTrade(sc.decode(msg.data));
+          if (!trade) continue;
+          tradeWindow += 1;
+          const now = Date.now();
+          if (now - tradeWindowAt >= 1_000) {
+            pollDiag.tradesPerSec = tradeWindow;
+            pollDiag.lastOkAt = now;
+            tradeWindow = 0;
+            tradeWindowAt = now;
+          }
+          onTrade(trade);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        pollDiag.nats = "down";
+        pollDiag.lastError = message;
+        console.error("[server] pump.fun nats:", message);
+      } finally {
+        pollDiag.nats = "down";
+        try {
+          await nc?.close();
+        } catch {
+          /* ignore */
+        }
+        nc = null;
+      }
+      if (!stopped) await sleep(1_000);
+    }
+  };
+
+  void run();
+  return () => {
+    stopped = true;
+    void nc?.close();
+  };
+}
+
+function mapTrade(raw: string): PumpTrade | null {
+  const body = decodeJson(raw);
+  if (!body) return null;
+  const mint = String(body.mintAddress ?? "");
+  if (!mint) return null;
+  const cap = Number(body.marketCapUsd ?? body.marketCap);
+  if (!(cap > 0)) return null;
+  const price = Number(body.priceUsd);
+  return {
+    mint,
+    marketCapUsd: cap,
+    priceUsd: price > 0 ? price : cap / PUMP_SUPPLY,
+    isBondingCurve: body.isBondingCurve === true,
+    curvePct: body.isBondingCurve === true ? curvePctFromRealSol(realSolFromTrade(body)) : 100,
+  };
+}
+
+export function curvePctFromRealSol(realSol: number): number {
+  if (!(realSol > 0)) return 0;
+  return Math.min(99.9, Math.round((realSol / GRADUATE_SOL) * 1000) / 10);
+}
+
+function realSolFromTrade(body: Record<string, unknown>): number {
+  const quote = Number(body.quoteReserves);
+  if (Number.isFinite(quote) && quote >= 0) return quote;
+  const virtualSol = Number(body.virtualSolReserves ?? body.virtualQuoteReserves);
+  if (Number.isFinite(virtualSol) && virtualSol > 0) return Math.max(0, virtualSol - 30);
+  return 0;
+}
+
+function realSolFromCoin(raw: PumpCoin): number {
+  const real = Number(raw.real_sol_reserves);
+  if (Number.isFinite(real) && real > 0) return real > 1_000 ? real / 1e9 : real;
+  const virtualSol = Number(raw.virtual_sol_reserves);
+  if (Number.isFinite(virtualSol) && virtualSol > 0) {
+    const sol = virtualSol > 1_000 ? virtualSol / 1e9 : virtualSol;
+    return Math.max(0, sol - 30);
+  }
+  return 0;
+}
+
+function decodeJson(raw: string): Record<string, unknown> | null {
+  try {
+    let value: unknown = JSON.parse(raw);
+    if (typeof value === "string") value = JSON.parse(value);
+    if (!value || typeof value !== "object") return null;
+    return value as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function mapPumpCoin(raw: PumpCoin): AnsemCoin | null {
   if (!raw.mint || raw.is_banned) return null;
   const createdMs = Number(raw.created_timestamp);
@@ -82,10 +245,7 @@ function mapPumpCoin(raw: PumpCoin): AnsemCoin | null {
 
   const createdAt = createdMs < 1e12 ? createdMs * 1000 : createdMs;
   const graduated = raw.complete === true;
-  const realSol = Number(raw.real_sol_reserves) / 1e9;
-  const curvePct = graduated
-    ? 100
-    : Math.max(0, Math.min(99, Math.round((realSol / GRADUATE_SOL) * 100)));
+  const curvePct = graduated ? 100 : curvePctFromRealSol(realSolFromCoin(raw));
 
   return {
     slug: (raw.symbol || raw.mint).toLowerCase(),

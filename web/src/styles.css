@@ -658,6 +658,158 @@ body {
   color: #5a6154;
 }
 
+.inspect {
+  position: absolute;
+  z-index: 5;
+  width: 280px;
+  padding: 12px 14px 12px;
+  border: 1px solid #2a3320;
+  border-radius: 12px;
+  background: rgba(10, 13, 9, 0.94);
+  backdrop-filter: blur(12px);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.inspect-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.inspect-close:hover {
+  color: var(--text);
+}
+
+.inspect-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 22px;
+}
+
+.inspect-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #161a12;
+  flex: 0 0 auto;
+}
+
+.inspect-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 1px;
+}
+
+.inspect-id strong {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.inspect-name {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.inspect-curve {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.inspect-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.inspect-row .up {
+  color: var(--up);
+}
+
+.inspect-row .down {
+  color: var(--down);
+}
+
+.inspect-age {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.inspect-mint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.inspect-mint code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #9aa190;
+}
+
+.inspect-copy,
+.inspect-open {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.inspect-copy {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+}
+
+.inspect-copy:hover {
+  color: var(--text);
+}
+
+.inspect-open {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid #3a4a28;
+  border-radius: 8px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.inspect-open:hover {
+  background: rgba(182, 243, 77, 0.22);
+}
+
 /* ------------------------------------------------------------------- legend */
 
 .legend {

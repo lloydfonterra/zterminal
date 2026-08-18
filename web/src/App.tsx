@@ -1,22 +1,25 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { MarketMap } from "./MarketMap";
-import { MoversList, type MoversSort } from "./MoversList";
+import { MoversList } from "./MoversList";
 import { useFeed } from "./useFeed";
 import { CHART_PROVIDERS, PRIMARY_CHART_IDS, chartLabel, type ChartProvider } from "./iconAtlas";
-import { GRADUATE_MCAP_USD, type MapConfig } from "./scales";
+import { graduateMcapUsd, type MapConfig } from "./scales";
 import type { Token } from "./types";
 
 const WINDOWS: Array<{ label: string; seconds: number }> = [
+  { label: "5m", seconds: 300 },
+  { label: "15m", seconds: 900 },
   { label: "30m", seconds: 1_800 },
-  { label: "3h", seconds: 10_800 },
-  { label: "24h", seconds: 86_400 },
+  { label: "1h", seconds: 3_600 },
+  { label: "6h", seconds: 21_600 },
 ];
 
 const CAP_RANGES: Array<{ label: string; minUsd: number; maxUsd: number }> = [
-  { label: "all", minUsd: 250, maxUsd: 5_000_000 },
+  { label: "250–10K", minUsd: 250, maxUsd: 10_000 },
   { label: "1K–50K", minUsd: 1_000, maxUsd: 50_000 },
-  { label: "1K–200K", minUsd: 1_000, maxUsd: 200_000 },
-  { label: "2K–1M", minUsd: 2_000, maxUsd: 1_000_000 },
+  { label: "1K–100K", minUsd: 1_000, maxUsd: 100_000 },
+  { label: "5K–200K", minUsd: 5_000, maxUsd: 200_000 },
+  { label: "all", minUsd: 250, maxUsd: 1_000_000 },
 ];
 
 const STATUSES: Array<{ label: string; value: "all" | "on_curve" | "migrated" }> = [
@@ -29,14 +32,13 @@ const STATUSES: Array<{ label: string; value: "all" | "on_curve" | "migrated" }>
 export default function App() {
   const { tokens, solPriceUsd, status, setWatchMints } = useFeed();
   const [windowIndex, setWindowIndex] = useState(1);
-  const [capIndex, setCapIndex] = useState(2);
+  const [capIndex, setCapIndex] = useState(1);
   const [statusFilter, setStatusFilter] = useState<(typeof STATUSES)[number]["value"]>("all");
   const [chart, setChart] = useState<ChartProvider>("pumpfun");
   const [moreOpen, setMoreOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [moversSort, setMoversSort] = useState<MoversSort>("climbers");
   const [clock, setClock] = useState(() => formatClock(new Date()));
   const [now, setNow] = useState(() => Date.now());
 
@@ -51,13 +53,14 @@ export default function App() {
 
   const config: MapConfig = useMemo(() => {
     const win = WINDOWS[windowIndex] ?? WINDOWS[1]!;
-    const cap = CAP_RANGES[capIndex] ?? CAP_RANGES[2]!;
+    const cap = CAP_RANGES[capIndex] ?? CAP_RANGES[1]!;
     return {
       windowSeconds: win.seconds,
       minCapUsd: cap.minUsd,
       maxCapUsd: cap.maxUsd,
+      graduateMcapUsd: graduateMcapUsd(solPriceUsd),
     };
-  }, [windowIndex, capIndex]);
+  }, [windowIndex, capIndex, solPriceUsd]);
 
   const inWindow = useMemo(() => {
     const cutoff = now - config.windowSeconds * 1000;
@@ -77,7 +80,7 @@ export default function App() {
   }, [inWindow, selectedId, focusId, setWatchMints]);
 
   const graduated = inWindow.filter((t) => t.status === "migrated").length;
-  const aboveGrad = inWindow.filter((t) => t.marketCapUsd >= GRADUATE_MCAP_USD).length;
+  const aboveGrad = inWindow.filter((t) => t.marketCapUsd >= config.graduateMcapUsd).length;
   const primaryCharts = CHART_PROVIDERS.filter((c) => PRIMARY_CHART_IDS.includes(c.id));
   const extraCharts = CHART_PROVIDERS.filter((c) => !PRIMARY_CHART_IDS.includes(c.id));
   const extraActive = extraCharts.some((c) => c.id === chart);
@@ -120,7 +123,10 @@ export default function App() {
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && searchHits[0]) jumpTo(searchHits[0]);
-                if (e.key === "Escape") setSearch("");
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setSearch("");
+                }
               }}
               aria-label="Search tokens"
             />
@@ -250,13 +256,7 @@ export default function App() {
             setFocusId(id);
           }}
         />
-        <MoversList
-          tokens={inWindow}
-          selectedId={selectedId}
-          sort={moversSort}
-          onSort={setMoversSort}
-          onSelect={jumpTo}
-        />
+        <MoversList tokens={inWindow} selectedId={selectedId} onSelect={jumpTo} />
       </div>
 
       <footer className="legend">
@@ -274,7 +274,7 @@ export default function App() {
           <i className="dot graduated" /> graduated
         </span>
         <span className="hint">
-          Hover a bubble · click opens {chartLabel(chart)} · search or movers to jump
+          Hover a bubble · click to inspect · copy CA · Open {chartLabel(chart)}
         </span>
         <time className="clock" dateTime={new Date().toISOString()}>
           {clock}
