@@ -98,6 +98,7 @@ body {
 }
 
 .bar-top {
+  position: relative;
   height: 48px;
 }
 
@@ -155,6 +156,24 @@ body {
   font-size: 11px;
   font-weight: 400;
   color: var(--text-dim);
+}
+
+.brand-x {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+
+.brand-x:hover {
+  color: var(--accent);
+  filter: drop-shadow(0 0 6px var(--accent-glow));
 }
 
 .group {
@@ -415,6 +434,15 @@ body {
   font-size: 12px;
 }
 
+.search-out {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
 /* -------------------------------------------------------------------- movers */
 
 .movers {
@@ -522,6 +550,14 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.movers-dev {
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: #ffd24d;
 }
 
 .movers-flag {
@@ -685,6 +721,11 @@ body {
   box-shadow: 0 0 8px var(--accent-glow);
 }
 
+.tier-pill.family {
+  color: #1a1404;
+  background: #ffd24d;
+}
+
 .map-tooltip-name {
   display: block;
   color: var(--text-dim);
@@ -731,7 +772,8 @@ body {
 
 .inspect {
   position: absolute;
-  z-index: 5;
+  z-index: 6;
+  pointer-events: auto;
   width: 280px;
   padding: 0 14px 12px;
   border: 1px solid var(--stroke);
@@ -997,6 +1039,28 @@ body {
 .dot.graduated {
   background: var(--accent);
   box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.dot.family {
+  background: #ffd24d;
+}
+
+.copy-toast {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border: 1px solid rgba(57, 255, 122, 0.4);
+  background: rgba(2, 16, 8, 0.94);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  pointer-events: none;
+  box-shadow: 0 0 18px rgba(57, 255, 122, 0.18);
 }
 
 @media (max-width: 1100px) {

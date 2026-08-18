@@ -20,6 +20,7 @@ export interface Token {
   twitter?: string | null;
   telegram?: string | null;
   website?: string | null;
+  creator?: string | null;
 }
 
 export interface Snapshot {

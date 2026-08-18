@@ -10,9 +10,22 @@ interface Props {
   x: number;
   y: number;
   onClose: () => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+  devCount?: number;
 }
 
-export function InspectCard({ token, now, chart, x, y, onClose }: Props) {
+export function InspectCard({
+  token,
+  now,
+  chart,
+  x,
+  y,
+  onClose,
+  onMouseEnter,
+  onMouseLeave,
+  devCount = 0,
+}: Props) {
   const [copied, setCopied] = useState(false);
   const change = liveChange(token);
   const tone = change === null ? "" : change >= 0 ? "up" : "down";
@@ -45,12 +58,18 @@ export function InspectCard({ token, now, chart, x, y, onClose }: Props) {
   };
 
   return (
-    <aside className="inspect" style={{ left: x, top: y }} aria-label={`${token.symbol} details`}>
+    <aside
+      className="inspect"
+      style={{ left: x, top: y }}
+      aria-label={`${token.symbol} details`}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
       <div className="inspect-chrome">
         inspect
         <span className="inspect-chrome-id">{token.symbol}</span>
       </div>
-      <button type="button" className="inspect-close" onClick={onClose} aria-label="Deselect">
+      <button type="button" className="inspect-close" onClick={onClose} aria-label="Close inspect">
         ×
       </button>
       <div className="inspect-head">
@@ -71,6 +90,7 @@ export function InspectCard({ token, now, chart, x, y, onClose }: Props) {
         ) : (
           <span className="inspect-curve">{formatCurvePct(token.curvePct)} curve</span>
         )}
+        {devCount >= 2 && <span className="tier-pill family">dev ×{devCount}</span>}
       </div>
       <div className="inspect-row">
         <span>{formatUsdMoney(token.marketCapUsd)}</span>

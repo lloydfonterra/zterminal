@@ -24,6 +24,7 @@ export interface WireToken {
   twitter: string | null;
   telegram: string | null;
   website: string | null;
+  creator: string | null;
 }
 
 interface PricePoint {
@@ -118,7 +119,8 @@ export class MarketState {
         prev.coin.change24hPct !== next.change24hPct ||
         prev.coin.twitter !== next.twitter ||
         prev.coin.telegram !== next.telegram ||
-        prev.coin.website !== next.website;
+        prev.coin.website !== next.website ||
+        prev.coin.creatorWallet !== next.creatorWallet;
 
       if (moved) {
         if (prev.coin.marketCapUsd !== next.marketCapUsd || prev.coin.priceUsd !== next.priceUsd) {
@@ -250,6 +252,7 @@ export class MarketState {
       twitter: coin.twitter,
       telegram: coin.telegram,
       website: coin.website,
+      creator: coin.creatorWallet || null,
     };
   }
 

@@ -6,11 +6,12 @@ interface Props {
   tokens: Token[];
   selectedId: string | null;
   onSelect: (token: Token) => void;
+  creatorCounts?: Map<string, number>;
 }
 
 const LIMIT = 16;
 
-export function MoversList({ tokens, selectedId, onSelect }: Props) {
+export function MoversList({ tokens, selectedId, onSelect, creatorCounts }: Props) {
   const ranked = [...tokens]
     .sort(
       (a, b) =>
@@ -46,7 +47,12 @@ export function MoversList({ tokens, selectedId, onSelect }: Props) {
                   }}
                 />
                 <span className="movers-id">
-                  <span className="movers-sym">{token.symbol.slice(0, 10)}</span>
+                  <span className="movers-sym">
+                    {token.symbol.slice(0, 10)}
+                    {token.creator && (creatorCounts?.get(token.creator) ?? 0) >= 2 && (
+                      <span className="movers-dev">×{creatorCounts?.get(token.creator)}</span>
+                    )}
+                  </span>
                   <span className={`movers-flag ${token.status}`}>
                     {token.status === "migrated" ? "migrated" : formatCurvePct(token.curvePct)}
                   </span>

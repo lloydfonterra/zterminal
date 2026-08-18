@@ -38,7 +38,9 @@ export default function App() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [inspectId, setInspectId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [copiedToast, setCopiedToast] = useState<string | null>(null);
   const [clock, setClock] = useState(() => formatClock(new Date()));
   const [now, setNow] = useState(() => Date.now());
 
@@ -88,21 +90,81 @@ export default function App() {
   const searchHits = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [] as Token[];
-    return inWindow
-      .filter(
-        (t) =>
-          t.symbol.toLowerCase().includes(q) ||
-          t.name.toLowerCase().includes(q) ||
-          t.token.toLowerCase().includes(q),
-      )
+    return [...tokens]
+      .filter((t) => searchScore(t, q) < 9)
+      .sort((a, b) => searchScore(a, q) - searchScore(b, q) || b.marketCapUsd - a.marketCapUsd)
       .slice(0, 8);
-  }, [search, inWindow]);
+  }, [search, tokens]);
+
+  const inIds = useMemo(() => new Set(inWindow.map((t) => t.poolId)), [inWindow]);
+
+  const creatorCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const token of tokens) {
+      const creator = token.creator;
+      if (!creator) continue;
+      counts.set(creator, (counts.get(creator) ?? 0) + 1);
+    }
+    return counts;
+  }, [tokens]);
+
+  const mapTokens = useMemo(() => {
+    const extra = tokens.filter((t) => t.poolId === selectedId || t.poolId === focusId);
+    if (extra.length === 0) return inWindow;
+    const seen = new Set(inWindow.map((t) => t.poolId));
+    const missing = extra.filter((t) => !seen.has(t.poolId));
+    return missing.length === 0 ? inWindow : [...inWindow, ...missing];
+  }, [inWindow, tokens, selectedId, focusId]);
+
+  const copyCa = (token: Token): void => {
+    void navigator.clipboard.writeText(token.token).then(
+      () => {
+        setCopiedToast(token.symbol);
+        window.setTimeout(() => setCopiedToast(null), 1200);
+      },
+      () => setCopiedToast(null),
+    );
+  };
+
+  const pickToken = (token: Token): void => {
+    setSelectedId(token.poolId);
+    setFocusId(token.poolId);
+    copyCa(token);
+  };
 
   const jumpTo = (token: Token): void => {
     setSelectedId(token.poolId);
     setFocusId(token.poolId);
+    setInspectId(token.poolId);
     setSearch("");
+    copyCa(token);
   };
+
+  const pickFromList = (token: Token): void => {
+    setSelectedId(token.poolId);
+    setFocusId(token.poolId);
+    setInspectId(token.poolId);
+    copyCa(token);
+  };
+
+  const clearPick = (): void => {
+    setSelectedId(null);
+    setFocusId(null);
+    setInspectId(null);
+  };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== "i" && event.key !== "I") return;
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (!selectedId) return;
+      event.preventDefault();
+      setInspectId((id) => (id === selectedId ? null : selectedId));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId]);
 
   return (
     <div className="app">
@@ -116,6 +178,21 @@ export default function App() {
             </span>
             <span className="chain">pump.fun</span>
           </div>
+
+          <a
+            className="brand-x"
+            href="https://x.com/zTerminalz"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="zTerminal on X"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.727-8.835L1.254 2.25H8.08l4.253 5.622L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+              />
+            </svg>
+          </a>
 
           <div className="search">
             <input
@@ -141,6 +218,7 @@ export default function App() {
                     <button type="button" onClick={() => jumpTo(t)}>
                       <span className="search-sym">{t.symbol}</span>
                       <span className="search-name">{t.name}</span>
+                      {!inIds.has(t.poolId) && <span className="search-out">out</span>}
                     </button>
                   </li>
                 ))}
@@ -249,17 +327,29 @@ export default function App() {
 
       <div className="workspace">
         <MarketMap
-          tokens={inWindow}
+          tokens={mapTokens}
+          allTokens={tokens}
           config={config}
           chart={chart}
           selectedId={selectedId}
+          inspectId={inspectId}
           focusId={focusId}
           onSelect={(id) => {
-            setSelectedId(id);
-            setFocusId(id);
+            if (!id) {
+              clearPick();
+              return;
+            }
+            const token = tokens.find((t) => t.poolId === id);
+            if (token) pickToken(token);
           }}
+          onInspectClose={() => setInspectId(null)}
         />
-        <MoversList tokens={inWindow} selectedId={selectedId} onSelect={jumpTo} />
+        <MoversList
+          tokens={inWindow}
+          selectedId={selectedId}
+          creatorCounts={creatorCounts}
+          onSelect={pickFromList}
+        />
       </div>
 
       <footer className="legend">
@@ -276,13 +366,21 @@ export default function App() {
         <span>
           <i className="dot graduated" /> graduated
         </span>
+        <span>
+          <i className="dot family" /> same dev
+        </span>
         <span className="hint">
-          Hover a bubble · click to inspect · copy CA · Open {chartLabel(chart)}
+          Hover for details · click copies CA · Open {chartLabel(chart)}
         </span>
         <time className="clock" dateTime={new Date().toISOString()}>
           {clock}
         </time>
       </footer>
+      {copiedToast && (
+        <div className="copy-toast" role="status">
+          copied {copiedToast}
+        </div>
+      )}
     </div>
   );
 }
@@ -320,4 +418,14 @@ function formatClock(date: Date): string {
     second: "2-digit",
     hour12: false,
   });
+}
+
+function searchScore(token: Token, q: string): number {
+  const symbol = token.symbol.toLowerCase();
+  const name = token.name.toLowerCase();
+  const mint = token.token.toLowerCase();
+  if (symbol === q || mint === q) return 0;
+  if (symbol.startsWith(q) || mint.startsWith(q)) return 1;
+  if (symbol.includes(q) || name.includes(q) || mint.includes(q)) return 2;
+  return 9;
 }

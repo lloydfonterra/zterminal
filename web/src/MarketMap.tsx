@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DeckGL from "@deck.gl/react";
 import { OrthographicView } from "@deck.gl/core";
 import { IconLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
@@ -11,12 +11,9 @@ import {
   capGridlines,
   fillColorForToken,
   formatAge,
-  formatCurvePct,
-  formatLiveChange,
   formatUsd,
   formatUsdMoney,
   haloColorForToken,
-  liveChange,
   radiusForCap,
   ringColorForToken,
   showsGraduation,
@@ -32,10 +29,13 @@ const LABEL_MIN_RADIUS = 11;
 
 interface Props {
   tokens: Token[];
+  allTokens?: Token[];
   config: MapConfig;
   chart: ChartProvider;
   selectedId: string | null;
+  inspectId?: string | null;
   onSelect: (poolId: string | null) => void;
+  onInspectClose?: () => void;
   focusId?: string | null;
 }
 
@@ -45,18 +45,17 @@ interface Placed {
   radius: number;
 }
 
-interface HoverState {
-  token: Token;
-  x: number;
-  y: number;
-}
+const CARD_HIDE_MS = 240;
 
 export function MarketMap({
   tokens,
+  allTokens,
   config,
   chart,
   selectedId,
+  inspectId = null,
   onSelect,
+  onInspectClose,
   focusId = null,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -66,7 +65,9 @@ export function MarketMap({
   tokensRef.current = tokens;
   const [view, setView] = useState<Viewport>({ width: 1200, height: 700 });
   const [now, setNow] = useState(() => Date.now());
-  const [hover, setHover] = useState<HoverState | null>(null);
+  const [cardId, setCardId] = useState<string | null>(null);
+  const overCardRef = useRef(false);
+  const hideTimer = useRef(0);
 
   if (atlasRef.current === null) atlasRef.current = new IconAtlas();
   const atlas = atlasRef.current;
@@ -116,10 +117,48 @@ export function MarketMap({
     return () => window.cancelAnimationFrame(raf);
   }, []);
 
-  const visible = useMemo(
-    () => tokens.filter((t) => now - t.createdAt <= config.windowSeconds * 1000),
-    [tokens, now, config.windowSeconds],
-  );
+  const revealCard = useCallback((id: string | null): void => {
+    if (id) {
+      window.clearTimeout(hideTimer.current);
+      setCardId(id);
+      return;
+    }
+    window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => {
+      if (!overCardRef.current) setCardId(null);
+    }, CARD_HIDE_MS);
+  }, []);
+
+  const dismissCard = useCallback((): void => {
+    overCardRef.current = false;
+    window.clearTimeout(hideTimer.current);
+    setCardId(null);
+    onInspectClose?.();
+  }, [onInspectClose]);
+
+  useEffect(() => () => window.clearTimeout(hideTimer.current), []);
+
+  const visible = useMemo(() => {
+    const within = tokens.filter((t) => now - t.createdAt <= config.windowSeconds * 1000);
+    const keep = new Set(within.map((t) => t.poolId));
+    for (const token of tokens) {
+      if ((token.poolId === selectedId || token.poolId === focusId) && !keep.has(token.poolId)) {
+        within.push(token);
+        keep.add(token.poolId);
+      }
+    }
+    return within;
+  }, [tokens, now, config.windowSeconds, selectedId, focusId]);
+
+  const familyCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const token of allTokens ?? tokens) {
+      const creator = token.creator;
+      if (!creator) continue;
+      counts.set(creator, (counts.get(creator) ?? 0) + 1);
+    }
+    return counts;
+  }, [allTokens, tokens]);
 
   const displayCap = (token: Token): number =>
     smoothCaps.current.get(token.poolId) ?? token.marketCapUsd;
@@ -161,16 +200,28 @@ export function MarketMap({
     (focusId && tokens.find((t) => t.poolId === focusId)) ||
     null;
 
+  const cardToken =
+    (cardId && (visible.find((t) => t.poolId === cardId) || tokens.find((t) => t.poolId === cardId))) ||
+    (inspectId && (visible.find((t) => t.poolId === inspectId) || tokens.find((t) => t.poolId === inspectId))) ||
+    null;
+
   const pulseTargets = useMemo(() => {
-    const out: Token[] = [];
-    if (selected) out.push(selected);
-    else if (focusToken) out.push(focusToken);
-    return out;
-  }, [selected, focusToken]);
+    if (cardToken) return [cardToken];
+    if (selected) return [selected];
+    if (focusToken) return [focusToken];
+    return [] as Token[];
+  }, [cardToken, selected, focusToken]);
 
   const pick = (object: unknown): void => {
     const token = pickedToken(object);
-    onSelect(token ? token.poolId : null);
+    if (!token) {
+      overCardRef.current = false;
+      window.clearTimeout(hideTimer.current);
+      setCardId(null);
+      onSelect(null);
+      return;
+    }
+    onSelect(token.poolId);
   };
 
   const atlasTexture = atlas.atlas;
@@ -181,6 +232,18 @@ export function MarketMap({
   }
   for (const token of dots) {
     if (hasSocials(token)) socialMarks.push({ token, radius: radiusOf(token) });
+  }
+  const familyMarks: Array<{ token: Token; radius: number; count: number; color: [number, number, number, number] }> =
+    [];
+  for (const p of placed) {
+    const count = familySize(p.token, familyCount);
+    if (count >= 2) familyMarks.push({ token: p.token, radius: p.radius, count, color: familyColor(p.token.creator) });
+  }
+  for (const token of dots) {
+    const count = familySize(token, familyCount);
+    if (count >= 2) {
+      familyMarks.push({ token, radius: radiusOf(token), count, color: familyColor(token.creator) });
+    }
   }
 
   const layers = [
@@ -271,6 +334,27 @@ export function MarketMap({
       updateTriggers: { getPosition: positionTrigger, getSize: [now], getColor: [now] },
     }),
 
+    new TextLayer<{ token: Token; radius: number; count: number; color: [number, number, number, number] }>({
+      id: "dev-family",
+      data: familyMarks,
+      getPosition: (p) => {
+        const [x, y] = position(p.token);
+        return [x + p.radius * 0.72, y - p.radius * 0.72];
+      },
+      getText: (p) => `×${p.count}`,
+      getSize: 11,
+      getColor: (p) => p.color,
+      getTextAnchor: "middle",
+      getAlignmentBaseline: "center",
+      fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+      fontWeight: 700,
+      outlineWidth: 2,
+      outlineColor: [2, 10, 4, 230],
+      characterSet: "×0123456789",
+      pickable: false,
+      updateTriggers: { getPosition: positionTrigger, getText: [familyCount] },
+    }),
+
     new ScatterplotLayer<Token>({
       id: "focus-ring",
       data: pulseTargets,
@@ -338,52 +422,37 @@ export function MarketMap({
         style={{ position: "absolute", inset: "0" }}
         onDeviceInitialized={(device) => atlas.attach(device)}
         getCursor={({ isHovering }) => (isHovering ? "pointer" : "default")}
-        onHover={({ object, x, y }) => {
+        onHover={({ object }) => {
           const token = pickedToken(object);
-          setHover(token ? { token, x, y } : null);
+          if (token) {
+            if (inspectId && inspectId !== token.poolId) onInspectClose?.();
+            revealCard(token.poolId);
+            return;
+          }
+          revealCard(null);
         }}
         onClick={({ object }) => pick(object)}
       />
-      {selected && (
+      {cardToken && (
         <InspectCard
-          token={selected}
+          token={cardToken}
           now={now}
           chart={chart}
-          {...cardBeside(position(selected), radiusOf(selected), view)}
-          onClose={() => onSelect(null)}
+          devCount={familySize(cardToken, familyCount)}
+          {...cardBeside(position(cardToken), radiusOf(cardToken), view)}
+          onClose={dismissCard}
+          onMouseEnter={() => {
+            overCardRef.current = true;
+            window.clearTimeout(hideTimer.current);
+          }}
+          onMouseLeave={() => {
+            overCardRef.current = false;
+            revealCard(null);
+          }}
         />
-      )}
-      {hover && hover.token.poolId !== selectedId && (
-        <div
-          className="map-tooltip"
-          style={{ left: hover.x + 14, top: hover.y + 12 }}
-          role="tooltip"
-        >
-          <div className="map-tooltip-head">
-            <strong>{hover.token.symbol}</strong>
-            {hover.token.status === "migrated" && <span className="tier-pill migrated">grad</span>}
-          </div>
-          <span className="map-tooltip-name">{hover.token.name}</span>
-          <div className="map-tooltip-row">
-            {formatUsdMoney(hover.token.marketCapUsd)}
-            <span className={changeTone(hover.token)}>{formatLiveChange(hover.token)}</span>
-          </div>
-          <div className="map-tooltip-meta">
-            {hover.token.status === "migrated" ? "migrated" : `${formatCurvePct(hover.token.curvePct)} curve`}
-            {" · "}
-            {formatAge(now - hover.token.createdAt)}
-          </div>
-          <div className="map-tooltip-mint">{shortMint(hover.token.token)}</div>
-        </div>
       )}
     </div>
   );
-}
-
-function changeTone(token: Token): string {
-  const change = liveChange(token);
-  if (change === null) return "";
-  return change >= 0 ? "up" : "down";
 }
 
 function pickedToken(object: unknown): Token | null {
@@ -394,6 +463,36 @@ function pickedToken(object: unknown): Token | null {
 
 function hasSocials(token: Token): boolean {
   return Boolean(token.twitter || token.telegram || token.website);
+}
+
+function familySize(token: Token, counts: Map<string, number>): number {
+  if (!token.creator) return 0;
+  return counts.get(token.creator) ?? 0;
+}
+
+function familyColor(creator: string | null | undefined): [number, number, number, number] {
+  if (!creator) return [255, 196, 80, 240];
+  let hash = 0;
+  for (let i = 0; i < creator.length; i += 1) hash = (hash * 33 + creator.charCodeAt(i)) >>> 0;
+  const hue = hash % 360;
+  return hslRgb(hue, 0.72, 0.62);
+}
+
+function hslRgb(h: number, s: number, l: number): [number, number, number, number] {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hp = h / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (hp < 1) [r, g, b] = [c, x, 0];
+  else if (hp < 2) [r, g, b] = [x, c, 0];
+  else if (hp < 3) [r, g, b] = [0, c, x];
+  else if (hp < 4) [r, g, b] = [0, x, c];
+  else if (hp < 5) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const m = l - c / 2;
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255), 245];
 }
 
 function diamondPos([x, y]: [number, number], radius: number): [number, number] {
@@ -479,11 +578,6 @@ function MapGrid({ view, config }: { view: Viewport; config: MapConfig }) {
       </text>
     </svg>
   );
-}
-
-function shortMint(mint: string): string {
-  if (mint.length < 10) return mint;
-  return `${mint.slice(0, 4)}…${mint.slice(-4)}`;
 }
 
 const CARD_W = 280;
