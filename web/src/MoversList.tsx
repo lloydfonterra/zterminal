@@ -21,7 +21,7 @@ export function MoversList({ tokens, selectedId, onSelect }: Props) {
   return (
     <aside className="movers" aria-label="Top movers">
       <div className="movers-head">
-        <span className="movers-title">movers</span>
+        <span className="movers-title">// movers</span>
       </div>
 
       <ul className="movers-list">

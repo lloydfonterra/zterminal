@@ -45,6 +45,9 @@ interface PumpCoin {
   market_cap_usd?: number;
   real_sol_reserves?: number;
   virtual_sol_reserves?: number;
+  twitter?: string;
+  telegram?: string;
+  website?: string;
 }
 
 export async function fetchSolPrice(): Promise<number | null> {
@@ -235,6 +238,46 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function cleanLink(raw: string | undefined, kind: "twitter" | "telegram" | "website"): string | null {
+  if (!raw) return null;
+  const text = raw.trim();
+  if (!text) return null;
+
+  if (kind === "twitter" && !text.includes("/") && !text.includes(".")) {
+    const handle = text.replace(/^@/, "");
+    if (/^[A-Za-z0-9_]{1,15}$/.test(handle)) return `https://x.com/${handle}`;
+    return null;
+  }
+  if (kind === "telegram" && !text.startsWith("http://") && !text.startsWith("https://")) {
+    const handle = text.replace(/^@/, "").replace(/^(?:t\.me|telegram\.me)\//i, "");
+    if (/^[A-Za-z0-9_]{5,32}$/.test(handle)) return `https://t.me/${handle}`;
+    return null;
+  }
+
+  if (!text.startsWith("http://") && !text.startsWith("https://")) return null;
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./, "").toLowerCase();
+  if (!host || host === "https" || host === "http") return null;
+  if (kind === "twitter") {
+    if (host !== "x.com" && host !== "twitter.com") return null;
+    if (url.pathname === "/" || url.pathname.startsWith("/search")) return null;
+  }
+  if (kind === "telegram") {
+    if (host !== "t.me" && host !== "telegram.me") return null;
+    if (url.pathname === "/" || url.pathname === "") return null;
+  }
+  if (kind === "website") {
+    if (text === "https://" || text === "http://") return null;
+    if (host === "pump.fun" || host === "x.com" || host === "twitter.com" || host === "t.me") return null;
+  }
+  return url.toString();
+}
+
 function mapPumpCoin(raw: PumpCoin): AnsemCoin | null {
   if (!raw.mint || raw.is_banned) return null;
   const createdMs = Number(raw.created_timestamp);
@@ -267,6 +310,9 @@ function mapPumpCoin(raw: PumpCoin): AnsemCoin | null {
     volume24hUsd: null,
     change24hPct: null,
     txns24h: null,
+    twitter: cleanLink(raw.twitter, "twitter"),
+    telegram: cleanLink(raw.telegram, "telegram"),
+    website: cleanLink(raw.website, "website"),
     enhancedAt: null,
     createdAt: new Date(createdAt).toISOString(),
   };

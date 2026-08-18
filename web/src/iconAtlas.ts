@@ -1,7 +1,7 @@
 import type { Device, Texture } from "@luma.gl/core";
 
-const CELL = 64;
-const COLUMNS = 32;
+const CELL = 48;
+const COLUMNS = 48;
 const CAPACITY = COLUMNS * COLUMNS;
 const SIZE = CELL * COLUMNS;
 
@@ -23,6 +23,8 @@ export class IconAtlas {
   private texture: Texture | null = null;
 
   private slots = new Map<string, number>();
+  private occupier = new Map<number, string>();
+  private free: number[] = [];
   private nextIndex = 0;
   private awaitingUpload = new Set<number>();
   private failed = new Set<string>();
@@ -66,12 +68,19 @@ export class IconAtlas {
     return this.texture;
   }
 
+  retain(keep: Set<string>): void {
+    for (const mint of [...this.slots.keys()]) {
+      if (!keep.has(mint)) this.release(mint);
+    }
+  }
+
   ensure(mint: string, symbol: string, imageUrl: string | null): string | null {
     if (this.slots.has(mint)) return mint;
-    if (this.nextIndex >= CAPACITY) return null;
+    const index = this.free.pop() ?? (this.nextIndex < CAPACITY ? this.nextIndex++ : -1);
+    if (index < 0) return null;
 
-    const index = this.nextIndex++;
     this.slots.set(mint, index);
+    this.occupier.set(index, mint);
     this.mapping[mint] = cellToMapping(index);
 
     this.drawFallback(index, mint, symbol);
@@ -84,14 +93,30 @@ export class IconAtlas {
     return mint;
   }
 
+  private release(mint: string): void {
+    const index = this.slots.get(mint);
+    if (index === undefined) return;
+    this.slots.delete(mint);
+    delete this.mapping[mint];
+    this.failed.delete(mint);
+    this.inFlight.delete(mint);
+    if (this.occupier.get(index) === mint) this.occupier.delete(index);
+    this.free.push(index);
+  }
+
   private async loadRemote(index: number, key: string, url: string): Promise<void> {
     try {
       const bitmap = await loadBitmap(url);
+      if (this.occupier.get(index) !== key) {
+        bitmap.close();
+        return;
+      }
       this.drawCircularImage(index, bitmap);
       bitmap.close();
+      if (this.occupier.get(index) !== key) return;
       await this.upload(index);
     } catch {
-      this.failed.add(key);
+      if (this.occupier.get(index) === key) this.failed.add(key);
     } finally {
       this.inFlight.delete(key);
     }
@@ -127,7 +152,7 @@ export class IconAtlas {
     ctx.fill();
 
     ctx.fillStyle = `hsl(${hue} 72% 84%)`;
-    ctx.font = `600 ${initials.length > 2 ? 20 : 26}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.font = `600 ${initials.length > 2 ? 15 : 20}px ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(initials, x + CELL / 2, y + CELL / 2 + 1);

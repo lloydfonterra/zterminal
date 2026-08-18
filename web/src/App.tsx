@@ -111,6 +111,9 @@ export default function App() {
           <div className="brand" aria-label="zTerminal">
             <span className="brand-mark">z</span>
             <span className="brand-name">Terminal</span>
+            <span className="brand-cursor" aria-hidden="true">
+              █
+            </span>
             <span className="chain">pump.fun</span>
           </div>
 
@@ -118,7 +121,7 @@ export default function App() {
             <input
               type="search"
               className="search-input"
-              placeholder="Search ticker or mint"
+              placeholder="> ticker / mint"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
@@ -132,7 +135,7 @@ export default function App() {
             />
             {search.trim() && (
               <ul className="search-results">
-                {searchHits.length === 0 && <li className="search-empty">no matches</li>}
+                {searchHits.length === 0 && <li className="search-empty">no hits</li>}
                 {searchHits.map((t) => (
                   <li key={t.poolId}>
                     <button type="button" onClick={() => jumpTo(t)}>
@@ -260,7 +263,7 @@ export default function App() {
       </div>
 
       <footer className="legend">
-        <span className="legend-brand">zTerminal</span>
+        <span className="legend-brand">zterminal</span>
         <span>
           <i className="dot up" /> gaining
         </span>

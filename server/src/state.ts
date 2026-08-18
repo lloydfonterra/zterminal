@@ -21,6 +21,9 @@ export interface WireToken {
   change24h: number;
   volumeUsd24h: number;
   txns24h: number;
+  twitter: string | null;
+  telegram: string | null;
+  website: string | null;
 }
 
 interface PricePoint {
@@ -112,7 +115,10 @@ export class MarketState {
         prev.coin.tier !== next.tier ||
         prev.coin.curvePct !== next.curvePct ||
         prev.coin.volume24hUsd !== next.volume24hUsd ||
-        prev.coin.change24hPct !== next.change24hPct;
+        prev.coin.change24hPct !== next.change24hPct ||
+        prev.coin.twitter !== next.twitter ||
+        prev.coin.telegram !== next.telegram ||
+        prev.coin.website !== next.website;
 
       if (moved) {
         if (prev.coin.marketCapUsd !== next.marketCapUsd || prev.coin.priceUsd !== next.priceUsd) {
@@ -241,6 +247,9 @@ export class MarketState {
       change24h: Number.isFinite(change24h) ? change24h / 100 : 0,
       volumeUsd24h: Number(coin.volume24hUsd) || 0,
       txns24h: Number(coin.txns24h) || 0,
+      twitter: coin.twitter,
+      telegram: coin.telegram,
+      website: coin.website,
     };
   }
 

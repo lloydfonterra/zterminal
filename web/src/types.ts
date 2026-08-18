@@ -17,6 +17,9 @@ export interface Token {
   change24h: number;
   volumeUsd24h: number;
   txns24h: number;
+  twitter?: string | null;
+  telegram?: string | null;
+  website?: string | null;
 }
 
 export interface Snapshot {

@@ -28,7 +28,6 @@ import {
 
 /** Log-space ease toward the live chart print. Long enough to glide, short enough to track the tape. */
 const SMOOTH_MS = 220;
-const LOGO_MIN_USD = 1_000;
 const LABEL_MIN_RADIUS = 11;
 
 interface Props {
@@ -126,15 +125,13 @@ export function MarketMap({
     smoothCaps.current.get(token.poolId) ?? token.marketCapUsd;
 
   const { placed, dots } = useMemo(() => {
+    const keep = new Set(visible.map((t) => t.token));
+    atlas.retain(keep);
     const placedTokens: Placed[] = [];
     const dotTokens: Token[] = [];
     for (const token of visible) {
       const cap = displayCap(token);
       const radius = radiusForCap(cap, token.txns24h, config);
-      if (cap < LOGO_MIN_USD) {
-        dotTokens.push(token);
-        continue;
-      }
       const iconId = atlas.ensure(token.token, token.symbol, logoUrl(token.token));
       if (iconId === null) dotTokens.push(token);
       else placedTokens.push({ token, iconId, radius });
@@ -177,6 +174,14 @@ export function MarketMap({
   };
 
   const atlasTexture = atlas.atlas;
+  const breathe = 0.5 + 0.5 * Math.sin(now / 380);
+  const socialMarks: Array<{ token: Token; radius: number }> = [];
+  for (const p of placed) {
+    if (hasSocials(p.token)) socialMarks.push({ token: p.token, radius: p.radius });
+  }
+  for (const token of dots) {
+    if (hasSocials(token)) socialMarks.push({ token, radius: radiusOf(token) });
+  }
 
   const layers = [
     new ScatterplotLayer<Token>({
@@ -237,12 +242,41 @@ export function MarketMap({
         ]
       : []),
 
+    new ScatterplotLayer<{ token: Token; radius: number }>({
+      id: "social-glow",
+      data: socialMarks,
+      getPosition: (p) => diamondPos(position(p.token), p.radius),
+      getRadius: () => 8 + breathe * 4,
+      getFillColor: [170, 230, 255, Math.round(28 + breathe * 52)],
+      radiusUnits: "pixels",
+      pickable: false,
+      updateTriggers: { getPosition: positionTrigger, getRadius: [now], getFillColor: [now] },
+    }),
+
+    new TextLayer<{ token: Token; radius: number }>({
+      id: "social-diamond",
+      data: socialMarks,
+      getPosition: (p) => diamondPos(position(p.token), p.radius),
+      getText: () => "◆",
+      getSize: () => 11 + breathe * 1.8,
+      getColor: [210, 244, 255, Math.round(170 + breathe * 85)],
+      getTextAnchor: "middle",
+      getAlignmentBaseline: "center",
+      fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+      fontWeight: 700,
+      outlineWidth: 2,
+      outlineColor: [10, 14, 12, 230],
+      characterSet: "◆",
+      pickable: false,
+      updateTriggers: { getPosition: positionTrigger, getSize: [now], getColor: [now] },
+    }),
+
     new ScatterplotLayer<Token>({
       id: "focus-ring",
       data: pulseTargets,
       getPosition: position,
       getRadius: (t) => radiusOf(t) + 6 + Math.sin(now / 180) * 2,
-      getLineColor: [180, 255, 120, 220],
+      getLineColor: [57, 255, 122, 220],
       getLineWidth: 2,
       lineWidthUnits: "pixels",
       stroked: true,
@@ -254,20 +288,20 @@ export function MarketMap({
 
     new TextLayer<Placed>({
       id: "symbol-labels",
-      data: labelled,
+      data: labelled.filter((p) => labelText(p.token)),
       getPosition: (p) => {
         const [x, y] = position(p.token);
-        return [x, y - p.radius - 8];
+        return [x, y - p.radius - (hasSocials(p.token) ? 16 : 8)];
       },
       getText: (p) => labelText(p.token),
       getSize: (p) => Math.max(13, Math.min(17, 11 + p.radius * 0.35)),
-      getColor: [248, 248, 250, 255],
+      getColor: [210, 255, 220, 255],
       getTextAnchor: "middle",
       getAlignmentBaseline: "bottom",
-      fontFamily: '"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif',
+      fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
       fontWeight: 700,
       outlineWidth: 2.5,
-      outlineColor: [12, 13, 16, 230],
+      outlineColor: [2, 10, 4, 230],
       characterSet: "auto",
       updateTriggers: { getPosition: positionTrigger, getSize: [config] },
     }),
@@ -281,13 +315,13 @@ export function MarketMap({
       },
       getText: (p) => formatUsdMoney(p.token.marketCapUsd),
       getSize: 12,
-      getColor: [180, 184, 194, 240],
+      getColor: [80, 180, 110, 240],
       getTextAnchor: "middle",
       getAlignmentBaseline: "top",
-      fontFamily: '"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif',
+      fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
       fontWeight: 600,
       outlineWidth: 2,
-      outlineColor: [12, 13, 16, 210],
+      outlineColor: [2, 10, 4, 210],
       characterSet: "auto",
       updateTriggers: { getPosition: positionTrigger },
     }),
@@ -358,8 +392,16 @@ function pickedToken(object: unknown): Token | null {
   return object as Token;
 }
 
+function hasSocials(token: Token): boolean {
+  return Boolean(token.twitter || token.telegram || token.website);
+}
+
+function diamondPos([x, y]: [number, number], radius: number): [number, number] {
+  return [x, y - radius - 2];
+}
+
 function labelText(token: Token): string {
-  return token.symbol.replace(/[^\x20-\x7e]/g, "").slice(0, 12) || "?";
+  return token.symbol.replace(/[^\x20-\x7e]/g, "").slice(0, 12);
 }
 
 const CHAR_WIDTH = 8.2;
@@ -445,7 +487,7 @@ function shortMint(mint: string): string {
 }
 
 const CARD_W = 280;
-const CARD_H = 168;
+const CARD_H = 220;
 const CARD_GAP = 14;
 
 function cardBeside(

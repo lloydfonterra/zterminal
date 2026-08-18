@@ -25,6 +25,11 @@ export function InspectCard({ token, now, chart, x, y, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const socials: { label: string; href: string }[] = [];
+  if (token.twitter) socials.push({ label: "X", href: token.twitter });
+  if (token.telegram) socials.push({ label: "TG", href: token.telegram });
+  if (token.website) socials.push({ label: "web", href: token.website });
+
   const copyMint = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(token.token);
@@ -41,6 +46,10 @@ export function InspectCard({ token, now, chart, x, y, onClose }: Props) {
 
   return (
     <aside className="inspect" style={{ left: x, top: y }} aria-label={`${token.symbol} details`}>
+      <div className="inspect-chrome">
+        inspect
+        <span className="inspect-chrome-id">{token.symbol}</span>
+      </div>
       <button type="button" className="inspect-close" onClick={onClose} aria-label="Deselect">
         ×
       </button>
@@ -74,6 +83,21 @@ export function InspectCard({ token, now, chart, x, y, onClose }: Props) {
           {copied ? "copied" : "copy CA"}
         </button>
       </div>
+      {socials.length > 0 && (
+        <div className="inspect-socials">
+          {socials.map((item) => (
+            <a
+              key={item.label}
+              className="inspect-social"
+              href={item.href}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {item.label}
+            </a>
+          ))}
+        </div>
+      )}
       <button type="button" className="inspect-open" onClick={open}>
         Open {chartLabel(chart)}
       </button>

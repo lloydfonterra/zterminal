@@ -79,19 +79,19 @@ export function formatLiveChange(token: Token): string {
 /** Disc fill: curve vs migrated. */
 export function fillColorForToken(token: Token): [number, number, number, number] {
   const alpha = token.txns24h === 0 ? 130 : Math.round(160 + Math.min(80, token.txns24h * 0.3));
-  if (token.status === "migrated") return [90, 210, 130, alpha];
-  return [110, 128, 118, alpha];
+  if (token.status === "migrated") return [40, 230, 110, alpha];
+  return [36, 110, 68, alpha];
 }
 
 /** Ring: recent PnL, or flat gray when there is no 5m print. */
 export function ringColorForToken(token: Token): [number, number, number, number] {
   const change = liveChange(token);
-  if (change === null || Math.abs(change) < 0.01) return [128, 132, 148, 255];
+  if (change === null || Math.abs(change) < 0.01) return [48, 140, 82, 255];
   const intensity = Math.min(1, Math.abs(change) / 0.5);
   if (change > 0) {
-    return [Math.round(70 - 40 * intensity), Math.round(170 + 40 * intensity), 110, 255];
+    return [Math.round(20 + 20 * intensity), Math.round(200 + 55 * intensity), Math.round(90 + 30 * intensity), 255];
   }
-  return [Math.round(200 + 40 * intensity), Math.round(70 - 20 * intensity), 90, 255];
+  return [Math.round(200 + 40 * intensity), Math.round(50 - 10 * intensity), 70, 255];
 }
 
 export function haloColorForToken(token: Token): [number, number, number, number] {

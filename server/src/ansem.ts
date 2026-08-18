@@ -33,6 +33,9 @@ export interface AnsemCoin {
   volume24hUsd: number | null;
   change24hPct: number | null;
   txns24h: number | null;
+  twitter: string | null;
+  telegram: string | null;
+  website: string | null;
   enhancedAt: string | null;
   createdAt: string;
 }
