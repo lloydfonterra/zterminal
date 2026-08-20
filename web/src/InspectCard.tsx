@@ -39,6 +39,8 @@ export function InspectCard({
   const [livePoster, setLivePoster] = useState<{ handle: string; count: number } | null>(null);
   const change = liveChange(token);
   const tone = change === null ? "" : change >= 0 ? "up" : "down";
+  const graduated = token.status === "migrated";
+  const curvePct = graduated ? 100 : Math.max(0, Math.min(100, token.curvePct || 0));
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -149,17 +151,26 @@ export function InspectCard({
           <strong>{token.symbol}</strong>
           <span className="inspect-name">{token.name}</span>
         </div>
-        {token.status === "migrated" ? (
-          <span className="tier-pill migrated">grad</span>
-        ) : (
-          <span className="inspect-curve">{formatCurvePct(token.curvePct)} curve</span>
-        )}
+        {graduated ? <span className="tier-pill migrated">grad</span> : null}
         {devCount >= 2 && <span className="tier-pill family">dev ×{devCount}</span>}
         {(livePoster ?? poster)?.count && (livePoster ?? poster)!.count >= 2 && (
           <span className="tier-pill caller">
             caller ×{(livePoster ?? poster)!.count}
           </span>
         )}
+      </div>
+      <div
+        className={graduated ? "inspect-meter grad" : "inspect-meter"}
+        aria-label={graduated ? "graduated" : `${formatCurvePct(token.curvePct)} to the graduate line`}
+      >
+        <div className="inspect-meter-top">
+          <span>curve</span>
+          <span>{graduated ? "grad" : formatCurvePct(token.curvePct)}</span>
+        </div>
+        <div className="inspect-meter-track">
+          <div className="inspect-meter-fill" style={{ width: `${curvePct}%` }} />
+          <i className="inspect-meter-line" aria-hidden />
+        </div>
       </div>
       <div className="inspect-row">
         <span>{formatUsdMoney(token.marketCapUsd)}</span>

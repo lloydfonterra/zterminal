@@ -862,6 +862,53 @@ input:focus-visible {
   flex: 0 0 auto;
 }
 
+.inspect-meter {
+  margin-top: 12px;
+}
+
+.inspect-meter-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.inspect-meter-track {
+  position: relative;
+  height: 10px;
+  border: 2px solid var(--ink);
+  background: var(--desk);
+}
+
+.inspect-meter-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+}
+
+.inspect-meter.grad .inspect-meter-fill {
+  background: var(--up);
+}
+
+.inspect-meter.grad .inspect-meter-top span:last-child {
+  color: var(--up);
+}
+
+.inspect-meter-line {
+  position: absolute;
+  top: -3px;
+  right: -2px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--ink);
+  pointer-events: none;
+}
+
 .inspect-row {
   display: flex;
   align-items: baseline;
