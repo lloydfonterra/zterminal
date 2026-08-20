@@ -8,19 +8,24 @@ import type { PosterFamily, Token } from "./types";
 import { loadWatch, saveWatch, toggleWatchMint } from "./watchlist";
 
 const WINDOWS: Array<{ label: string; seconds: number }> = [
+  { label: "1m", seconds: 60 },
   { label: "5m", seconds: 300 },
   { label: "15m", seconds: 900 },
   { label: "30m", seconds: 1_800 },
   { label: "1h", seconds: 3_600 },
+  { label: "2h", seconds: 7_200 },
   { label: "6h", seconds: 21_600 },
+  { label: "24h", seconds: 86_400 },
 ];
 
 const CAP_RANGES: Array<{ label: string; minUsd: number; maxUsd: number }> = [
-  { label: "250–10K", minUsd: 250, maxUsd: 10_000 },
   { label: "1K–50K", minUsd: 1_000, maxUsd: 50_000 },
-  { label: "1K–100K", minUsd: 1_000, maxUsd: 100_000 },
   { label: "5K–200K", minUsd: 5_000, maxUsd: 200_000 },
-  { label: "all", minUsd: 250, maxUsd: 1_000_000 },
+  { label: "10K–100K", minUsd: 10_000, maxUsd: 100_000 },
+  { label: "100K–500K", minUsd: 100_000, maxUsd: 500_000 },
+  { label: "100K–1M", minUsd: 100_000, maxUsd: 1_000_000 },
+  { label: "1M+", minUsd: 1_000_000, maxUsd: 1_000_000_000 },
+  { label: "all", minUsd: 250, maxUsd: 1_000_000_000 },
 ];
 
 const STATUSES: Array<{ label: string; value: "all" | "on_curve" | "migrated" }> = [
@@ -41,8 +46,8 @@ const FARM_MIN = 5;
 
 export default function App() {
   const { tokens, solPriceUsd, status, setWatchMints, upsertToken } = useFeed();
-  const [windowIndex, setWindowIndex] = useState(1);
-  const [capIndex, setCapIndex] = useState(1);
+  const [windowIndex, setWindowIndex] = useState(2);
+  const [capIndex, setCapIndex] = useState(0);
   const [statusFilter, setStatusFilter] = useState<(typeof STATUSES)[number]["value"]>("all");
   const [showFilter, setShowFilter] = useState<(typeof SHOWS)[number]["value"]>("all");
   const [chart, setChart] = useState<ChartProvider>("pumpfun");
@@ -85,7 +90,7 @@ export default function App() {
   }, []);
 
   const config: MapConfig = useMemo(() => {
-    const win = WINDOWS[windowIndex] ?? WINDOWS[1]!;
+    const win = WINDOWS[windowIndex] ?? WINDOWS[2]!;
     const cap = CAP_RANGES[capIndex] ?? CAP_RANGES[1]!;
     return {
       windowSeconds: win.seconds,

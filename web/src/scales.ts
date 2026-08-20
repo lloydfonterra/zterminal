@@ -100,7 +100,8 @@ export function haloColorForToken(token: Token): [number, number, number, number
 }
 
 const MCAP_AXIS_USD = [
-  1_000_000, 500_000, 200_000, 100_000, 50_000, 30_000, 20_000, 10_000, 5_000, 2_000, 1_000, 250,
+  1_000_000_000, 100_000_000, 10_000_000, 5_000_000, 1_000_000, 500_000, 200_000, 100_000, 50_000,
+  30_000, 20_000, 10_000, 5_000, 2_000, 1_000, 250,
 ] as const;
 
 export function capGridlines(cfg: MapConfig): number[] {
@@ -114,7 +115,9 @@ export function showsGraduation(cfg: MapConfig): boolean {
   return grad > 0 && grad >= cfg.minCapUsd * 0.99 && grad <= cfg.maxCapUsd * 1.01;
 }
 
-const AGE_STEPS_SEC = [15, 30, 60, 120, 180, 300, 600, 900, 1_800, 3_600];
+const AGE_STEPS_SEC = [
+  15, 30, 60, 120, 180, 300, 600, 900, 1_800, 3_600, 7_200, 14_400, 21_600, 43_200, 86_400,
+];
 
 export function ageGridlines(cfg: MapConfig): number[] {
   const span = Math.max(1, cfg.windowSeconds);
