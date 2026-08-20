@@ -14,6 +14,7 @@ interface Props {
   onMouseLeave?: () => void;
   devCount?: number;
   watched?: boolean;
+  poster?: { handle: string; count: number } | null;
   onToggleWatch?: () => void;
 }
 
@@ -28,12 +29,14 @@ export function InspectCard({
   onMouseLeave,
   devCount = 0,
   watched = false,
+  poster = null,
   onToggleWatch,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [mentions, setMentions] = useState<CaMention[]>([]);
   const [mentionStatus, setMentionStatus] = useState<"idle" | "loading" | "ok" | "limited" | "error">("idle");
+  const [livePoster, setLivePoster] = useState<{ handle: string; count: number } | null>(null);
   const change = liveChange(token);
   const tone = change === null ? "" : change >= 0 ? "up" : "down";
 
@@ -49,6 +52,7 @@ export function InspectCard({
     const ac = new AbortController();
     setMentions([]);
     setMentionStatus("loading");
+    setLivePoster(null);
     const timer = window.setTimeout(() => {
       void fetch(`/mentions/${encodeURIComponent(token.token)}?since=${token.createdAt}`, {
         signal: ac.signal,
@@ -59,11 +63,14 @@ export function InspectCard({
               ok?: boolean;
               status?: string;
               mentions?: CaMention[];
+              poster?: { handle: string; count: number } | null;
             }>,
         )
         .then((body) => {
           const rows = Array.isArray(body.mentions) ? body.mentions.slice(0, 3) : [];
           setMentions(rows);
+          if (body.poster && body.poster.count >= 2) setLivePoster(body.poster);
+          else setLivePoster(null);
           if (body.status === "limited") setMentionStatus("limited");
           else if (body.status === "error") setMentionStatus("error");
           else setMentionStatus("ok");
@@ -148,6 +155,11 @@ export function InspectCard({
           <span className="inspect-curve">{formatCurvePct(token.curvePct)} curve</span>
         )}
         {devCount >= 2 && <span className="tier-pill family">dev ×{devCount}</span>}
+        {(livePoster ?? poster)?.count && (livePoster ?? poster)!.count >= 2 && (
+          <span className="tier-pill caller">
+            caller ×{(livePoster ?? poster)!.count}
+          </span>
+        )}
       </div>
       <div className="inspect-row">
         <span>{formatUsdMoney(token.marketCapUsd)}</span>

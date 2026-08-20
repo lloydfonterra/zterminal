@@ -1,3 +1,5 @@
+import { recordPosters } from "./posters.js";
+
 export interface CaMention {
   handle: string;
   name: string;
@@ -81,6 +83,10 @@ async function doSearch(mint: string, key: string): Promise<MentionResult> {
     const mentions = await searchTweets(mint);
     const result: MentionResult = { mentions, status: "ok" };
     cache.set(key, { at: Date.now(), result });
+    recordPosters(
+      mint,
+      mentions.map((row) => row.handle),
+    );
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

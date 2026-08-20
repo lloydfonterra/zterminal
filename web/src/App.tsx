@@ -4,7 +4,7 @@ import { MoversList } from "./MoversList";
 import { useFeed } from "./useFeed";
 import { CHART_PROVIDERS, PRIMARY_CHART_IDS, chartLabel, type ChartProvider } from "./iconAtlas";
 import { graduateMcapUsd, type MapConfig } from "./scales";
-import type { Token } from "./types";
+import type { PosterFamily, Token } from "./types";
 import { loadWatch, saveWatch, toggleWatchMint } from "./watchlist";
 
 const WINDOWS: Array<{ label: string; seconds: number }> = [
@@ -54,6 +54,7 @@ export default function App() {
   const [copiedToast, setCopiedToast] = useState<string | null>(null);
   const [lookup, setLookup] = useState<"idle" | "loading" | "miss">("idle");
   const [watched, setWatched] = useState<string[]>(() => loadWatch());
+  const [posters, setPosters] = useState<Record<string, PosterFamily>>({});
   const lookupBusy = useRef(false);
   const openedFromUrl = useRef(false);
   const watchFetch = useRef(new Set<string>());
@@ -66,6 +67,20 @@ export default function App() {
       setClock(formatClock(date));
       setNow(date.getTime());
     }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const load = (): void => {
+      void fetch("/posters")
+        .then((res) => res.json() as Promise<{ ok?: boolean; families?: Record<string, PosterFamily> }>)
+        .then((body) => {
+          if (body.ok && body.families) setPosters(body.families);
+        })
+        .catch(() => undefined);
+    };
+    load();
+    const timer = window.setInterval(load, 12_000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -480,6 +495,7 @@ export default function App() {
           inspectId={inspectId}
           focusId={focusId}
           watchedMints={watchedSet}
+          posters={posters}
           onToggleWatch={toggleWatch}
           onSelect={(id) => {
             if (!id) {
@@ -518,6 +534,9 @@ export default function App() {
         </span>
         <span>
           <i className="dot family" /> same dev
+        </span>
+        <span>
+          <i className="dot caller" /> same caller
         </span>
         <span className="hint">
           Hover for details · click copies CA · watch pins a coin

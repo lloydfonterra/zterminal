@@ -11,6 +11,7 @@ import {
   pollDiag,
 } from "./pumpfun.js";
 import { searchCaMentions, twitterSearchEnabled } from "./mentions.js";
+import { familyForMint, posterSnapshot } from "./posters.js";
 import { MarketState, type PriceQuote } from "./state.js";
 import { serveWeb } from "./static.js";
 
@@ -226,6 +227,7 @@ async function main(): Promise<void> {
               enabled: twitterSearchEnabled(),
               status: result.status,
               mentions: result.mentions,
+              poster: familyForMint(mint),
             }),
           );
         })
@@ -244,6 +246,12 @@ async function main(): Promise<void> {
             );
           }
         });
+      return;
+    }
+
+    if (url.pathname === "/posters") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, families: posterSnapshot() }));
       return;
     }
 

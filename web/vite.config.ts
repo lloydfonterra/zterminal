@@ -11,6 +11,7 @@ export default defineConfig({
       "/icon": { target: "http://localhost:8787" },
       "/coin": { target: "http://localhost:8787" },
       "/mentions": { target: "http://localhost:8787" },
+      "/posters": { target: "http://localhost:8787" },
     },
   },
 });

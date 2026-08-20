@@ -38,6 +38,7 @@ interface Props {
   onInspectClose?: () => void;
   focusId?: string | null;
   watchedMints?: Set<string>;
+  posters?: Record<string, { handle: string; count: number }>;
   onToggleWatch?: (mint: string) => void;
 }
 
@@ -60,6 +61,7 @@ export function MarketMap({
   onInspectClose,
   focusId = null,
   watchedMints,
+  posters,
   onToggleWatch,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -249,6 +251,15 @@ export function MarketMap({
       familyMarks.push({ token, radius: radiusOf(token), count, color: familyColor(token.creator) });
     }
   }
+  const callerMarks: Array<{ token: Token; radius: number; count: number }> = [];
+  for (const p of placed) {
+    const count = posters?.[p.token.token]?.count ?? 0;
+    if (count >= 2) callerMarks.push({ token: p.token, radius: p.radius, count });
+  }
+  for (const token of dots) {
+    const count = posters?.[token.token]?.count ?? 0;
+    if (count >= 2) callerMarks.push({ token, radius: radiusOf(token), count });
+  }
 
   const layers = [
     new ScatterplotLayer<Token>({
@@ -359,6 +370,27 @@ export function MarketMap({
       updateTriggers: { getPosition: positionTrigger, getText: [familyCount] },
     }),
 
+    new TextLayer<{ token: Token; radius: number; count: number }>({
+      id: "caller-family",
+      data: callerMarks,
+      getPosition: (p) => {
+        const [x, y] = position(p.token);
+        return [x - p.radius * 0.72, y - p.radius * 0.72];
+      },
+      getText: (p) => `×${p.count}`,
+      getSize: 11,
+      getColor: [214, 106, 92, 245],
+      getTextAnchor: "middle",
+      getAlignmentBaseline: "center",
+      fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+      fontWeight: 700,
+      outlineWidth: 2,
+      outlineColor: [23, 19, 14, 230],
+      characterSet: "×0123456789",
+      pickable: false,
+      updateTriggers: { getPosition: positionTrigger, getText: [posters] },
+    }),
+
     new ScatterplotLayer<Token>({
       id: "focus-ring",
       data: pulseTargets,
@@ -454,6 +486,7 @@ export function MarketMap({
             revealCard(null);
           }}
           watched={watchedMints?.has(cardToken.token) ?? false}
+          poster={posters?.[cardToken.token] ?? null}
           onToggleWatch={onToggleWatch ? () => onToggleWatch(cardToken.token) : undefined}
         />
       )}

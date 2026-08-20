@@ -23,6 +23,11 @@ export interface Token {
   creator?: string | null;
 }
 
+export interface PosterFamily {
+  handle: string;
+  count: number;
+}
+
 export interface Snapshot {
   payloadType: "snapshot";
   solPriceUsd: number;
