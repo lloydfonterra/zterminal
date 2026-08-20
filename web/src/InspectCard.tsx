@@ -27,6 +27,8 @@ export function InspectCard({
   devCount = 0,
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [mentions, setMentions] = useState<CaMention[]>([]);
+  const [mentionStatus, setMentionStatus] = useState<"idle" | "loading" | "ok" | "limited" | "error">("idle");
   const change = liveChange(token);
   const tone = change === null ? "" : change >= 0 ? "up" : "down";
 
@@ -37,6 +39,42 @@ export function InspectCard({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    setMentions([]);
+    setMentionStatus("loading");
+    const timer = window.setTimeout(() => {
+      void fetch(`/mentions/${encodeURIComponent(token.token)}?since=${token.createdAt}`, {
+        signal: ac.signal,
+      })
+        .then(
+          (res) =>
+            res.json() as Promise<{
+              ok?: boolean;
+              status?: string;
+              mentions?: CaMention[];
+            }>,
+        )
+        .then((body) => {
+          const rows = Array.isArray(body.mentions) ? body.mentions.slice(0, 3) : [];
+          setMentions(rows);
+          if (body.status === "limited") setMentionStatus("limited");
+          else if (body.status === "error") setMentionStatus("error");
+          else setMentionStatus("ok");
+        })
+        .catch(() => {
+          if (!ac.signal.aborted) {
+            setMentions([]);
+            setMentionStatus("error");
+          }
+        });
+    }, 700);
+    return () => {
+      window.clearTimeout(timer);
+      ac.abort();
+    };
+  }, [token.token, token.createdAt]);
 
   const socials: { label: string; href: string }[] = [];
   if (token.twitter) socials.push({ label: "X", href: token.twitter });
@@ -118,6 +156,31 @@ export function InspectCard({
           ))}
         </div>
       )}
+      {(mentionStatus === "loading" || mentionStatus === "limited" || mentionStatus === "error" || mentions.length > 0) && (
+        <div className="inspect-mentions">
+          <div className="inspect-mentions-label">on x</div>
+          {mentionStatus === "loading" && <div className="inspect-mention-empty">looking…</div>}
+          {mentionStatus === "limited" && <div className="inspect-mention-empty">x busy — hold one coin</div>}
+          {mentionStatus === "error" && mentions.length === 0 && (
+            <div className="inspect-mention-empty">x search failed</div>
+          )}
+          {mentions.map((mention) => (
+            <a
+              key={mention.tweetId}
+              className="inspect-mention"
+              href={mention.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className="inspect-mention-meta">
+                <span className="inspect-mention-handle">@{mention.handle}</span>
+                <span className="inspect-mention-age">{formatAge(now - mention.createdAt)}</span>
+              </span>
+              {mention.text ? <span className="inspect-mention-text">{mention.text}</span> : null}
+            </a>
+          ))}
+        </div>
+      )}
       <button type="button" className="inspect-open" onClick={open}>
         Open {chartLabel(chart)}
       </button>
@@ -128,4 +191,13 @@ export function InspectCard({
 function shortMint(mint: string): string {
   if (mint.length < 10) return mint;
   return `${mint.slice(0, 4)}…${mint.slice(-4)}`;
+}
+
+interface CaMention {
+  handle: string;
+  name: string;
+  tweetId: string;
+  createdAt: number;
+  url: string;
+  text?: string;
 }

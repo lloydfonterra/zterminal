@@ -10,6 +10,7 @@ import {
   listenPumpTrades,
   pollDiag,
 } from "./pumpfun.js";
+import { searchCaMentions, twitterSearchEnabled } from "./mentions.js";
 import { MarketState, type PriceQuote } from "./state.js";
 import { serveWeb } from "./static.js";
 
@@ -207,6 +208,45 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (url.pathname.startsWith("/mentions/")) {
+      const mint = decodeURIComponent(url.pathname.slice("/mentions/".length)).trim();
+      if (!isSolanaMint(mint)) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, mentions: [] }));
+        return;
+      }
+      const sinceRaw = Number(url.searchParams.get("since") ?? "");
+      const sinceMs = Number.isFinite(sinceRaw) && sinceRaw > 0 ? sinceRaw : undefined;
+      void searchCaMentions(mint, sinceMs)
+        .then((result) => {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: true,
+              enabled: twitterSearchEnabled(),
+              status: result.status,
+              mentions: result.mentions,
+            }),
+          );
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error("[server] mentions failed:", message);
+          if (!res.headersSent) {
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: true,
+                enabled: twitterSearchEnabled(),
+                status: "error",
+                mentions: [],
+              }),
+            );
+          }
+        });
+      return;
+    }
+
     if (url.pathname.startsWith("/icon/")) {
       serveIcon(req, res, state);
       return;
@@ -253,10 +293,25 @@ async function main(): Promise<void> {
 
   setInterval(() => broadcast("ping"), PING_INTERVAL_MS);
 
-  http.listen(config.port, config.host, () => {
-    console.log(`[server] listening on http://${config.host}:${config.port}`);
-    console.log(`[server] feed at ws://${config.host}:${config.port}/ws/public`);
-  });
+  const listen = (attempt = 0): void => {
+    const onErr = (err: NodeJS.ErrnoException): void => {
+      if (err.code === "EADDRINUSE" && attempt < 12) {
+        const wait = 250 + attempt * 150;
+        console.warn(`[server] port ${config.port} busy, retry ${attempt + 1}/12 in ${wait}ms`);
+        setTimeout(() => listen(attempt + 1), wait);
+        return;
+      }
+      console.error("[server] listen failed:", err);
+      process.exit(1);
+    };
+    http.once("error", onErr);
+    http.listen(config.port, config.host, () => {
+      http.off("error", onErr);
+      console.log(`[server] listening on http://${config.host}:${config.port}`);
+      console.log(`[server] feed at ws://${config.host}:${config.port}/ws/public`);
+    });
+  };
+  listen();
 
   void sol();
   void deep();

@@ -759,7 +759,10 @@ input:focus-visible {
   position: absolute;
   z-index: 6;
   pointer-events: auto;
-  width: 292px;
+  width: 380px;
+  max-height: calc(100% - 16px);
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 0 16px 14px;
   border: 3px solid var(--ink);
   background: var(--paper) var(--grain-dark);
@@ -916,6 +919,80 @@ input:focus-visible {
 .inspect-social:hover {
   color: var(--paper);
   background: var(--ink);
+}
+
+.inspect-mentions {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 2px solid var(--ink);
+}
+
+.inspect-mentions-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+
+.inspect-mention-empty {
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 0;
+}
+
+.inspect-mention {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 8px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 28%, transparent);
+}
+
+.inspect-mention:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.inspect-mention:hover {
+  color: var(--accent);
+}
+
+.inspect-mention-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.inspect-mention-handle {
+  font-weight: 700;
+}
+
+.inspect-mention-age {
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.inspect-mention-text {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.inspect-mention:hover .inspect-mention-text {
+  color: var(--ink);
 }
 
 .inspect-copy,

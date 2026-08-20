@@ -10,6 +10,7 @@ export default defineConfig({
       "/health": { target: "http://localhost:8787" },
       "/icon": { target: "http://localhost:8787" },
       "/coin": { target: "http://localhost:8787" },
+      "/mentions": { target: "http://localhost:8787" },
     },
   },
 });

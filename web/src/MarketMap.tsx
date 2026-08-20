@@ -580,8 +580,7 @@ function MapGrid({ view, config }: { view: Viewport; config: MapConfig }) {
   );
 }
 
-const CARD_W = 280;
-const CARD_H = 220;
+const CARD_W = 388;
 const CARD_GAP = 14;
 
 function cardBeside(
@@ -589,9 +588,10 @@ function cardBeside(
   radius: number,
   view: Viewport,
 ): { x: number; y: number } {
+  const maxH = Math.max(240, view.height - 16);
   let left = x + radius + CARD_GAP;
   if (left + CARD_W > view.width - 8) left = x - radius - CARD_GAP - CARD_W;
   left = Math.max(8, Math.min(left, view.width - CARD_W - 8));
-  const top = Math.max(8, Math.min(y - CARD_H / 2, view.height - CARD_H - 8));
+  const top = Math.max(8, Math.min(y - 36, view.height - maxH - 8));
   return { x: left, y: top };
 }
