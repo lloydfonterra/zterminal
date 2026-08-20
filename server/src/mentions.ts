@@ -109,7 +109,9 @@ async function waitTurn(): Promise<void> {
 }
 
 async function searchTweets(mint: string): Promise<CaMention[]> {
-  const body = await fetchSearch(mint);
+  const body =
+    (await fetchSearch(mint, "Latest")) ?? (await fetchSearch(mint, "Top"));
+  if (!body) return [];
   if (!loggedShape) {
     loggedShape = true;
     const rec = isRec(body) ? body : {};
@@ -137,8 +139,8 @@ async function searchTweets(mint: string): Promise<CaMention[]> {
   return mentions;
 }
 
-async function fetchSearch(query: string): Promise<unknown> {
-  const params = new URLSearchParams({ query, search_type: "Top" });
+async function fetchSearch(query: string, searchType: "Latest" | "Top"): Promise<unknown | null> {
+  const params = new URLSearchParams({ query, search_type: searchType });
   const res = await fetch(`https://${HOST}/search.php?${params}`, {
     headers: {
       "scraper-key": scraperKey(),
@@ -147,6 +149,7 @@ async function fetchSearch(query: string): Promise<unknown> {
   });
   if (res.status === 429) throw new Error("scraper 429");
   if (!res.ok) {
+    if (searchType === "Latest") return null;
     const text = await res.text();
     throw new Error(`scraper ${res.status} ${text.slice(0, 120)}`);
   }
