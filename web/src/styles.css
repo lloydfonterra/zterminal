@@ -883,6 +883,7 @@ input:focus-visible {
 .inspect-mint {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
 }
@@ -1016,6 +1017,27 @@ input:focus-visible {
 
 .inspect-copy:hover {
   color: var(--ink);
+}
+
+.inspect-watch {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border: 2px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.inspect-watch.on {
+  color: var(--paper);
+  background: var(--ink);
 }
 
 .inspect-open {

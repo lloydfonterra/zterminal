@@ -7,11 +7,12 @@ interface Props {
   selectedId: string | null;
   onSelect: (token: Token) => void;
   creatorCounts?: Map<string, number>;
+  emptyLabel?: string;
 }
 
 const LIMIT = 16;
 
-export function MoversList({ tokens, selectedId, onSelect, creatorCounts }: Props) {
+export function MoversList({ tokens, selectedId, onSelect, creatorCounts, emptyLabel }: Props) {
   const ranked = [...tokens]
     .sort(
       (a, b) =>
@@ -26,7 +27,9 @@ export function MoversList({ tokens, selectedId, onSelect, creatorCounts }: Prop
       </div>
 
       <ul className="movers-list">
-        {ranked.length === 0 && <li className="movers-empty">no tokens in window</li>}
+        {ranked.length === 0 && (
+          <li className="movers-empty">{emptyLabel ?? "no tokens in window"}</li>
+        )}
         {ranked.map((token, i) => {
           const change = liveChange(token);
           const tone = change === null ? "" : change >= 0 ? "up" : "down";

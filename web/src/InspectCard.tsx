@@ -13,6 +13,8 @@ interface Props {
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   devCount?: number;
+  watched?: boolean;
+  onToggleWatch?: () => void;
 }
 
 export function InspectCard({
@@ -25,8 +27,11 @@ export function InspectCard({
   onMouseEnter,
   onMouseLeave,
   devCount = 0,
+  watched = false,
+  onToggleWatch,
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [mentions, setMentions] = useState<CaMention[]>([]);
   const [mentionStatus, setMentionStatus] = useState<"idle" | "loading" | "ok" | "limited" | "error">("idle");
   const change = liveChange(token);
@@ -91,6 +96,20 @@ export function InspectCard({
     }
   };
 
+  const copyLink = async (): Promise<void> => {
+    try {
+      const url = new URL(window.location.href);
+      url.search = "";
+      url.hash = "";
+      url.searchParams.set("ca", token.token);
+      await navigator.clipboard.writeText(url.toString());
+      setCopiedLink(true);
+      window.setTimeout(() => setCopiedLink(false), 1200);
+    } catch {
+      setCopiedLink(false);
+    }
+  };
+
   const open = (): void => {
     window.open(chartUrl(chart, token.token), "_blank", "noopener,noreferrer");
   };
@@ -140,6 +159,18 @@ export function InspectCard({
         <button type="button" className="inspect-copy" onClick={() => void copyMint()}>
           {copied ? "copied" : "copy CA"}
         </button>
+        <button type="button" className="inspect-copy" onClick={() => void copyLink()}>
+          {copiedLink ? "copied" : "copy link"}
+        </button>
+        {onToggleWatch && (
+          <button
+            type="button"
+            className={watched ? "inspect-watch on" : "inspect-watch"}
+            onClick={onToggleWatch}
+          >
+            {watched ? "watching" : "watch"}
+          </button>
+        )}
       </div>
       {socials.length > 0 && (
         <div className="inspect-socials">

@@ -37,6 +37,8 @@ interface Props {
   onSelect: (poolId: string | null) => void;
   onInspectClose?: () => void;
   focusId?: string | null;
+  watchedMints?: Set<string>;
+  onToggleWatch?: (mint: string) => void;
 }
 
 interface Placed {
@@ -57,6 +59,8 @@ export function MarketMap({
   onSelect,
   onInspectClose,
   focusId = null,
+  watchedMints,
+  onToggleWatch,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const atlasRef = useRef<IconAtlas | null>(null);
@@ -449,6 +453,8 @@ export function MarketMap({
             overCardRef.current = false;
             revealCard(null);
           }}
+          watched={watchedMints?.has(cardToken.token) ?? false}
+          onToggleWatch={onToggleWatch ? () => onToggleWatch(cardToken.token) : undefined}
         />
       )}
     </div>

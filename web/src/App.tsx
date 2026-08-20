@@ -5,6 +5,7 @@ import { useFeed } from "./useFeed";
 import { CHART_PROVIDERS, PRIMARY_CHART_IDS, chartLabel, type ChartProvider } from "./iconAtlas";
 import { graduateMcapUsd, type MapConfig } from "./scales";
 import type { Token } from "./types";
+import { loadWatch, saveWatch, toggleWatchMint } from "./watchlist";
 
 const WINDOWS: Array<{ label: string; seconds: number }> = [
   { label: "5m", seconds: 300 },
@@ -28,10 +29,11 @@ const STATUSES: Array<{ label: string; value: "all" | "on_curve" | "migrated" }>
   { label: "migrated", value: "migrated" },
 ];
 
-const SHOWS: Array<{ label: string; value: "all" | "socials" | "hide_farm" }> = [
+const SHOWS: Array<{ label: string; value: "all" | "socials" | "hide_farm" | "watch" }> = [
   { label: "all", value: "all" },
   { label: "socials", value: "socials" },
   { label: "hide ×5+", value: "hide_farm" },
+  { label: "watch", value: "watch" },
 ];
 
 const FARM_MIN = 5;
@@ -51,7 +53,10 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [copiedToast, setCopiedToast] = useState<string | null>(null);
   const [lookup, setLookup] = useState<"idle" | "loading" | "miss">("idle");
+  const [watched, setWatched] = useState<string[]>(() => loadWatch());
   const lookupBusy = useRef(false);
+  const openedFromUrl = useRef(false);
+  const watchFetch = useRef(new Set<string>());
   const [clock, setClock] = useState(() => formatClock(new Date()));
   const [now, setNow] = useState(() => Date.now());
 
@@ -85,7 +90,13 @@ export default function App() {
     return counts;
   }, [tokens]);
 
+  const watchedSet = useMemo(() => new Set(watched), [watched]);
+
   const inWindow = useMemo(() => {
+    if (showFilter === "watch") {
+      const pinned = tokens.filter((t) => watchedSet.has(t.token));
+      if (pinned.length > 0) return pinned;
+    }
     const cutoff = now - config.windowSeconds * 1000;
     return tokens.filter((t) => {
       if (t.createdAt < cutoff) return false;
@@ -98,14 +109,18 @@ export default function App() {
       }
       return true;
     });
-  }, [tokens, config, statusFilter, showFilter, creatorCounts, now]);
+  }, [tokens, config, statusFilter, showFilter, creatorCounts, now, watchedSet]);
 
   useEffect(() => {
     const mints = inWindow.map((t) => t.poolId);
     if (selectedId && !mints.includes(selectedId)) mints.push(selectedId);
     if (focusId && !mints.includes(focusId)) mints.push(focusId);
+    if (inspectId && !mints.includes(inspectId)) mints.push(inspectId);
+    for (const token of tokens) {
+      if (watchedSet.has(token.token) && !mints.includes(token.poolId)) mints.push(token.poolId);
+    }
     setWatchMints(mints);
-  }, [inWindow, selectedId, focusId, setWatchMints]);
+  }, [inWindow, selectedId, focusId, inspectId, setWatchMints, tokens, watchedSet]);
 
   const graduated = inWindow.filter((t) => t.status === "migrated").length;
   const aboveGrad = inWindow.filter((t) => t.marketCapUsd >= config.graduateMcapUsd).length;
@@ -133,12 +148,18 @@ export default function App() {
   const inIds = useMemo(() => new Set(inWindow.map((t) => t.poolId)), [inWindow]);
 
   const mapTokens = useMemo(() => {
-    const extra = tokens.filter((t) => t.poolId === selectedId || t.poolId === focusId);
+    const extra = tokens.filter(
+      (t) =>
+        t.poolId === selectedId ||
+        t.poolId === focusId ||
+        t.poolId === inspectId ||
+        watchedSet.has(t.token),
+    );
     if (extra.length === 0) return inWindow;
     const seen = new Set(inWindow.map((t) => t.poolId));
     const missing = extra.filter((t) => !seen.has(t.poolId));
     return missing.length === 0 ? inWindow : [...inWindow, ...missing];
-  }, [inWindow, tokens, selectedId, focusId]);
+  }, [inWindow, tokens, selectedId, focusId, inspectId, watchedSet]);
 
   const copyCa = (token: Token): void => {
     void navigator.clipboard.writeText(token.token).then(
@@ -156,16 +177,17 @@ export default function App() {
     copyCa(token);
   };
 
-  const jumpTo = (token: Token): void => {
+  const jumpTo = (token: Token, opts?: { copy?: boolean }): void => {
     setSelectedId(token.poolId);
     setFocusId(token.poolId);
     setInspectId(token.poolId);
     setSearch("");
     setLookup("idle");
-    copyCa(token);
+    writeCaUrl(token.token);
+    if (opts?.copy !== false) copyCa(token);
   };
 
-  const lookupCa = async (mint: string): Promise<void> => {
+  const lookupCa = async (mint: string, opts?: { copy?: boolean }): Promise<void> => {
     if (lookupBusy.current) return;
     lookupBusy.current = true;
     setLookup("loading");
@@ -177,13 +199,21 @@ export default function App() {
         return;
       }
       upsertToken(body.token);
-      jumpTo(body.token);
+      jumpTo(body.token, opts);
     } catch {
       setLookup("miss");
     } finally {
       lookupBusy.current = false;
     }
   };
+
+  useEffect(() => {
+    if (openedFromUrl.current) return;
+    const mint = mintFromUrl();
+    if (!mint) return;
+    openedFromUrl.current = true;
+    void lookupCa(mint, { copy: false });
+  }, []);
 
   const submitSearch = (): void => {
     const q = search.trim();
@@ -202,6 +232,7 @@ export default function App() {
     setSelectedId(token.poolId);
     setFocusId(token.poolId);
     setInspectId(token.poolId);
+    writeCaUrl(token.token);
     copyCa(token);
   };
 
@@ -209,7 +240,33 @@ export default function App() {
     setSelectedId(null);
     setFocusId(null);
     setInspectId(null);
+    writeCaUrl(null);
   };
+
+  const toggleWatch = (mint: string): void => {
+    setWatched((prev) => {
+      const next = toggleWatchMint(prev, mint);
+      saveWatch(next);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    for (const mint of watched) {
+      if (watchFetch.current.has(mint)) continue;
+      if (tokens.some((t) => t.token === mint)) {
+        watchFetch.current.add(mint);
+        continue;
+      }
+      watchFetch.current.add(mint);
+      void fetch(`/coin/${encodeURIComponent(mint)}`)
+        .then((res) => res.json() as Promise<{ ok?: boolean; token?: Token }>)
+        .then((body) => {
+          if (body.ok && body.token) upsertToken(body.token);
+        })
+        .catch(() => undefined);
+    }
+  }, [watched, tokens, upsertToken]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -363,7 +420,7 @@ export default function App() {
                 className={s.value === showFilter ? "chip active" : "chip"}
                 onClick={() => setShowFilter(s.value)}
               >
-                {s.label}
+                {s.value === "watch" && watched.length > 0 ? `watch ${watched.length}` : s.label}
               </button>
             ))}
           </Segment>
@@ -422,6 +479,8 @@ export default function App() {
           selectedId={selectedId}
           inspectId={inspectId}
           focusId={focusId}
+          watchedMints={watchedSet}
+          onToggleWatch={toggleWatch}
           onSelect={(id) => {
             if (!id) {
               clearPick();
@@ -437,6 +496,9 @@ export default function App() {
           selectedId={selectedId}
           creatorCounts={creatorCounts}
           onSelect={pickFromList}
+          emptyLabel={
+            showFilter === "watch" ? "no watches yet — hover a coin, then watch" : undefined
+          }
         />
       </div>
 
@@ -458,7 +520,7 @@ export default function App() {
           <i className="dot family" /> same dev
         </span>
         <span className="hint">
-          Hover for details · click copies CA · Open {chartLabel(chart)}
+          Hover for details · click copies CA · watch pins a coin
         </span>
         <time className="clock" dateTime={new Date().toISOString()}>
           {clock}
@@ -506,6 +568,22 @@ function formatClock(date: Date): string {
     second: "2-digit",
     hour12: false,
   });
+}
+
+function mintFromUrl(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const raw = (params.get("ca") || params.get("mint") || "").trim();
+  return isSolanaMint(raw) ? raw : null;
+}
+
+function writeCaUrl(mint: string | null): void {
+  const url = new URL(window.location.href);
+  if (mint) url.searchParams.set("ca", mint);
+  else url.searchParams.delete("ca");
+  url.searchParams.delete("mint");
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  if (`${window.location.pathname}${window.location.search}${window.location.hash}` === next) return;
+  window.history.replaceState(null, "", next);
 }
 
 function hasSocials(token: Token): boolean {
